@@ -65,8 +65,10 @@ describe('updateNoteFromEditor — no-op save skip', () => {
 
 		// No write, no date change.
 		expect(putSpy).not.toHaveBeenCalled();
-		expect(result?.changeDate).toBe(note.changeDate);
-		expect(result?.metadataChangeDate).toBe(note.metadataChangeDate);
+		if (!result.ok) throw new Error('expected ok');
+		expect(result.note.changeDate).toBe(note.changeDate);
+		expect(result.note.metadataChangeDate).toBe(note.metadataChangeDate);
+		expect(result.titleChanged).toBe(false);
 
 		// Stored note should be untouched.
 		expect(store.get(note.guid)?.changeDate).toBe(note.changeDate);
@@ -85,7 +87,8 @@ describe('updateNoteFromEditor — no-op save skip', () => {
 		const result = await updateNoteFromEditor(note.guid, newDoc);
 
 		expect(putSpy).toHaveBeenCalledTimes(1);
-		expect(result?.changeDate).not.toBe(originalDate);
+		if (!result.ok) throw new Error('expected ok');
+		expect(result.note.changeDate).not.toBe(originalDate);
 		expect(store.get(note.guid)?.xmlContent).toContain('body changed');
 	});
 });

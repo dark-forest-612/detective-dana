@@ -44,7 +44,7 @@ beforeEach(() => {
 });
 
 describe('titleProvider', () => {
-	it('refresh() populates entries with lower-cased titles', async () => {
+	it('refresh() populates entries with original-cased titles (case-sensitive matching)', async () => {
 		listNotesMock.mockResolvedValueOnce([
 			makeNote('a', 'Foo Bar'),
 			makeNote('b', 'Hello World')
@@ -55,9 +55,24 @@ describe('titleProvider', () => {
 		const titles = p.getTitles();
 		expect(titles).toHaveLength(2);
 		const byGuid = Object.fromEntries(titles.map((t) => [t.guid, t]));
+		// The provider preserves the original case — matching is case-sensitive.
 		expect(byGuid.a.original).toBe('Foo Bar');
-		expect(byGuid.a.titleLower).toBe('foo bar');
-		expect(byGuid.b.titleLower).toBe('hello world');
+		expect(byGuid.b.original).toBe('Hello World');
+		p.dispose();
+	});
+
+	it('treats titles that differ only in case as separate entries', async () => {
+		listNotesMock.mockResolvedValueOnce([
+			makeNote('a', 'Apple'),
+			makeNote('b', 'apple')
+		]);
+		const p = createTitleProvider({});
+		await p.refresh();
+
+		const titles = p.getTitles();
+		expect(titles).toHaveLength(2);
+		const originals = titles.map((t) => t.original).sort();
+		expect(originals).toEqual(['Apple', 'apple']);
 		p.dispose();
 	});
 

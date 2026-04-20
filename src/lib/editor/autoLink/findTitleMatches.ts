@@ -5,15 +5,25 @@
  * substrings of `text` that match any title as a whole "word" (using
  * unicode-aware word boundaries). Longer titles take priority when
  * candidates overlap.
+ *
+ * Matching is case-SENSITIVE: "Apple" and "apple" are different titles
+ * and must match their text exactly (after trimming whitespace).
  */
 
 export interface TitleEntry {
-	/** Lower-cased title (locale-lowered) used for matching. */
-	titleLower: string;
-	/** The original title, preserved for the resulting `target`. */
+	/**
+	 * The original title, preserved exactly as-is for matching and for the
+	 * resulting `target`. Matching is case-sensitive on this value (trimmed).
+	 */
 	original: string;
 	/** GUID of the note this title belongs to. */
 	guid: string;
+	/**
+	 * @deprecated No longer consulted by findTitleMatches — matching is
+	 * case-sensitive on `original`. Retained as an optional field so existing
+	 * call sites that still populate it continue to type-check.
+	 */
+	titleLower?: string;
 }
 
 export interface Match {
@@ -53,34 +63,38 @@ export function findTitleMatches(
 	if (!text) return [];
 	const exclude = options.excludeGuid ?? null;
 
-	// Keep only non-empty, non-excluded titles; de-dup by titleLower.
+	// Keep only non-empty, non-excluded titles; de-dup by the case-sensitive
+	// trimmed title so two notes with the same exact title collapse.
 	const seen = new Set<string>();
-	const candidates: TitleEntry[] = [];
+	interface Candidate {
+		needle: string;
+		original: string;
+		guid: string;
+	}
+	const candidates: Candidate[] = [];
 	for (const entry of titles) {
-		const trimmed = entry.titleLower.trim();
+		const trimmed = entry.original.trim();
 		if (!trimmed) continue;
 		if (exclude !== null && entry.guid === exclude) continue;
 		if (seen.has(trimmed)) continue;
 		seen.add(trimmed);
-		candidates.push({ ...entry, titleLower: trimmed });
+		candidates.push({ needle: trimmed, original: entry.original, guid: entry.guid });
 	}
 	if (candidates.length === 0) return [];
 
 	// Sort longest-first so longer titles win overlaps.
-	candidates.sort((a, b) => b.titleLower.length - a.titleLower.length);
+	candidates.sort((a, b) => b.needle.length - a.needle.length);
 
-	// Pre-compute a lower-cased copy of `text` for case-insensitive matching.
-	const textLower = text.toLocaleLowerCase();
 	const matches: Match[] = [];
 
 	let cursor = 0;
 	outer: while (cursor < text.length) {
 		for (const cand of candidates) {
-			const needle = cand.titleLower;
+			const needle = cand.needle;
 			if (needle.length === 0) continue;
 			if (cursor + needle.length > text.length) continue;
-			// Quick check first char
-			if (textLower.startsWith(needle, cursor)) {
+			// Case-sensitive compare against the raw text.
+			if (text.startsWith(needle, cursor)) {
 				const from = cursor;
 				const to = cursor + needle.length;
 				const before = from > 0 ? text[from - 1] : undefined;
