@@ -53,14 +53,17 @@
 	async function openBacklinks() {
 		view = 'backlinks';
 		backlinksLoading = true;
-		const titleLower = note.title.trim().toLowerCase();
+		// Case-sensitive backlink detection: "Apple" and "apple" are
+		// distinct notes, so only links whose mark text matches the
+		// current title exactly count as backlinks.
+		const titleTrimmed = note.title.trim();
 		const all = await noteRepository.getAll();
 		backlinkNotes = all.filter((n) => {
 			if (n.guid === note.guid) return false;
-			const xml = n.xmlContent.toLowerCase();
+			const xml = n.xmlContent;
 			return (
-				xml.includes(`>${titleLower}</link:internal>`) ||
-				xml.includes(`>${titleLower}</link:broken>`)
+				xml.includes(`>${titleTrimmed}</link:internal>`) ||
+				xml.includes(`>${titleTrimmed}</link:broken>`)
 			);
 		});
 		backlinksLoading = false;

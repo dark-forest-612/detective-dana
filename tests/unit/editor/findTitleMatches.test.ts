@@ -5,7 +5,7 @@ import {
 } from '$lib/editor/autoLink/findTitleMatches.js';
 
 function t(title: string, guid = `guid-${title}`): TitleEntry {
-	return { titleLower: title.toLocaleLowerCase(), original: title, guid };
+	return { original: title, guid };
 }
 
 describe('findTitleMatches — trivial inputs', () => {
@@ -98,18 +98,21 @@ describe('findTitleMatches — longest-match priority', () => {
 });
 
 describe('findTitleMatches — case sensitivity', () => {
-	it('matches case-insensitively but keeps target from the title entry', () => {
-		const m = findTitleMatches('FOO HERE', [t('Foo')]);
+	it('does NOT match when text and title case differ', () => {
+		// Case-sensitive: "FOO" !== "Foo".
+		expect(findTitleMatches('FOO HERE', [t('Foo')])).toEqual([]);
+	});
+
+	it('does NOT match an ALL-CAPS title against mixed-case text', () => {
+		expect(findTitleMatches('Hello world', [t('HELLO')])).toEqual([]);
+	});
+
+	it('matches when text has the exact same case as the title', () => {
+		const m = findTitleMatches('Foo here', [t('Foo')]);
 		expect(m).toHaveLength(1);
 		expect(m[0].target).toBe('Foo');
 		expect(m[0].from).toBe(0);
 		expect(m[0].to).toBe(3);
-	});
-
-	it('matches mixed-case title against mixed-case text', () => {
-		const m = findTitleMatches('Hello world', [t('HELLO')]);
-		expect(m).toHaveLength(1);
-		expect(m[0].target).toBe('HELLO');
 	});
 });
 

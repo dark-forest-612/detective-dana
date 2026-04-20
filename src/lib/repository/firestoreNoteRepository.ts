@@ -63,13 +63,16 @@ export const firestoreNoteRepository: NoteRepository = {
 	},
 
 	async findByTitle(title) {
-		const needle = title.trim().toLowerCase();
+		// Case-sensitive title resolution: "Apple" and "apple" are
+		// distinct notes. Whitespace is still trimmed for forgiving
+		// lookup across accidental trailing spaces.
+		const needle = title.trim();
 		if (!needle) return undefined;
 		const db = getFirestoreClient();
 		const snap = await getDocs(collection(db, COLLECTION));
 		const matches = snap.docs
 			.map(toNoteData)
-			.filter((n) => n.title.trim().toLowerCase() === needle);
+			.filter((n) => n.title.trim() === needle);
 		if (matches.length === 0) return undefined;
 		matches.sort(byChangeDateDesc);
 		return matches[0];

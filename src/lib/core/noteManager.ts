@@ -5,6 +5,7 @@ import { noteRepository } from '$lib/repository/index.js';
 import { generateGuid } from '$lib/utils/guid.js';
 import { invalidateCache } from '$lib/stores/noteListCache.js';
 import { isFavorite, removeFavorite } from './favorites.js';
+import { validateTitle, type TitleValidationError } from './titleValidator.js';
 import type { JSONContent } from '@tiptap/core';
 
 export { isFavorite, toggleFavorite } from './favorites.js';
@@ -26,10 +27,29 @@ export async function createNote(initialTitle?: string): Promise<NoteData> {
 	return note;
 }
 
+/**
+ * Result of `updateNoteFromEditor`. The `ok:false` branch carries a
+ * validation error so the caller can surface a message without re-running
+ * the validator; `ok:true` carries the freshly persisted note plus a flag
+ * indicating whether the title changed on this save (useful for lock /
+ * list-cache consumers that only care about rename events).
+ *
+ * `notFound` is returned when the target guid no longer exists — this is
+ * distinct from a validation failure and callers should treat it as "the
+ * note was deleted under us".
+ */
+export type UpdateNoteResult =
+	| { ok: true; note: NoteData; titleChanged: boolean }
+	| { ok: false; error: TitleValidationError }
+	| { ok: false; error: { kind: 'notFound' } };
+
 /** Update a note from the editor's JSON document */
-export async function updateNoteFromEditor(guid: string, doc: JSONContent): Promise<NoteData | undefined> {
+export async function updateNoteFromEditor(
+	guid: string,
+	doc: JSONContent
+): Promise<UpdateNoteResult> {
 	const note = await noteRepository.get(guid);
-	if (!note) return undefined;
+	if (!note) return { ok: false, error: { kind: 'notFound' } };
 
 	const newXmlContent = serializeContent(doc);
 	const newTitle = extractTitleFromDoc(doc);
@@ -41,10 +61,25 @@ export async function updateNoteFromEditor(guid: string, doc: JSONContent): Prom
 	// the date fields would tick forward on every transient edit cycle and
 	// the note would re-appear on the upload list.
 	if (newXmlContent === note.xmlContent && newTitle === note.title) {
-		return note;
+		return { ok: true, note, titleChanged: false };
 	}
 
-	const titleChanged = newTitle !== note.title;
+	const oldTitle = note.title;
+	const titleChanged = newTitle !== oldTitle;
+
+	// Validate the proposed title BEFORE persisting anything. Rule scope
+	// (Task 3): non-empty stored titles only. An empty `newTitle` on a
+	// fresh empty note is allowed by this gate — creation flows already
+	// mint placeholder titles and the UI forbids clearing the title via
+	// the cursor-leaves-title plugin. This keeps the save path from
+	// blocking the initial "blank note" round-trip that happens during
+	// `createNote()` while still preventing any user-driven invalid title
+	// from ever reaching storage.
+	if (titleChanged && newTitle.length > 0) {
+		const err = await validateTitle(newTitle, guid, noteRepository);
+		if (err) return { ok: false, error: err };
+	}
+
 	const now = formatTomboyDate(new Date());
 	note.xmlContent = newXmlContent;
 	note.title = newTitle;
@@ -52,6 +87,29 @@ export async function updateNoteFromEditor(guid: string, doc: JSONContent): Prom
 	note.metadataChangeDate = now;
 
 	await noteRepository.put(note);
+
+	// Propagate the rename to every other note that links to the old title
+	// via `<link:internal>OldTitle</link:internal>`. Scope is deliberately
+	// limited to `link:internal`: `link:broken` marks target titles that
+	// don't currently resolve, so rewriting them would be confusing (and
+	// they won't match in the common case). Comparison is case-sensitive —
+	// "Apple" and "apple" are distinct notes (see Task 1).
+	if (titleChanged && oldTitle.length > 0 && newTitle.length > 0) {
+		const oldEscaped = escapeXmlText(oldTitle);
+		const newEscaped = escapeXmlText(newTitle);
+		const needle = `>${oldEscaped}</link:internal>`;
+		const replacement = `>${newEscaped}</link:internal>`;
+		const allNotes = await noteRepository.getAll();
+		for (const other of allNotes) {
+			if (other.guid === guid) continue;
+			if (!other.xmlContent.includes(needle)) continue;
+			other.xmlContent = other.xmlContent.split(needle).join(replacement);
+			other.changeDate = now;
+			other.metadataChangeDate = now;
+			await noteRepository.put(other);
+		}
+	}
+
 	// Only invalidate the shared note-list cache when the title changed.
 	// Body-only edits don't affect any derived views that matter while the
 	// user is actively typing (the title list for auto-linking, notebook
@@ -60,7 +118,23 @@ export async function updateNoteFromEditor(guid: string, doc: JSONContent): Prom
 	// full-doc auto-link rescan. List pages remount on navigation and
 	// refetch fresh data then.
 	if (titleChanged) invalidateCache();
-	return note;
+	return { ok: true, note, titleChanged };
+}
+
+/**
+ * Escape XML-special characters in a plain-text string so it can be safely
+ * embedded inside an XML text node. Mirrors `escapeXmlContent` in
+ * `noteContentArchiver.ts` but also escapes `"` and `'` for defensive
+ * consistency — title text never appears inside XML attributes today, but
+ * the function is generic so future callers don't step on a footgun.
+ */
+function escapeXmlText(s: string): string {
+	return s
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&apos;');
 }
 
 /** Delete a note */
@@ -85,7 +159,7 @@ export async function getNote(guid: string): Promise<NoteData | undefined> {
 	return noteRepository.get(guid);
 }
 
-/** Find a note by its title (case-insensitive). */
+/** Find a note by its title (case-sensitive, whitespace-trimmed). */
 export async function findNoteByTitle(title: string): Promise<NoteData | undefined> {
 	return noteRepository.findByTitle(title);
 }

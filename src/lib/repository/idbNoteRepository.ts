@@ -43,11 +43,14 @@ export const idbNoteRepository: NoteRepository = {
 	},
 
 	async findByTitle(title) {
+		// Case-sensitive title resolution: "Apple" and "apple" are
+		// distinct notes. Whitespace is still trimmed for forgiving
+		// lookup across accidental trailing spaces.
 		const db = await getDB();
-		const needle = title.trim().toLowerCase();
+		const needle = title.trim();
 		if (!needle) return undefined;
 		const all = await db.getAll('notes');
-		const matches = all.filter((n) => n.title.trim().toLowerCase() === needle);
+		const matches = all.filter((n) => n.title.trim() === needle);
 		if (matches.length === 0) return undefined;
 		matches.sort(byChangeDateDesc);
 		return matches[0];
