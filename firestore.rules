@@ -14,9 +14,15 @@ rules_version = '2';
 //
 // NOTE: This file is generated from firestore.rules.template by
 // `scripts/generate-firestore-rules.mjs`. Edit the template, not this
-// file. Collection names come from PUBLIC_FIREBASE_NOTES_COLLECTION and
-// PUBLIC_FIREBASE_APP_SETTINGS_COLLECTION in .env (defaults: notes,
-// appSettings).
+// file.
+//
+// Collection names come from (in precedence order):
+//   1. FIREBASE_RULES_{NOTES,APP_SETTINGS}_COLLECTIONS — comma-separated
+//      list. Use when multiple projects share one database and each owns
+//      a distinct collection name; every name gets its own match block.
+//   2. PUBLIC_FIREBASE_{NOTES,APP_SETTINGS}_COLLECTION — singular, same
+//      var the client reads. Used when the rules list is unset.
+//   3. Defaults: `notes`, `appSettings`.
 
 service cloud.firestore { 
 	match /databases/{database}/documents {
