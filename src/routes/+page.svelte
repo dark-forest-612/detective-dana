@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
-	import { getHomeNoteGuid } from '$lib/core/home.js';
-	import { createNote, listNotes } from '$lib/core/noteManager.js';
-	import { markAutoEdit } from '$lib/collab/autoEdit.js';
+	import { onMount } from "svelte";
+	import { goto } from "$app/navigation";
+	import { getHomeNoteGuid } from "$lib/core/home.js";
+	import { createNote, listNotes } from "$lib/core/noteManager.js";
+	import { markAutoEdit } from "$lib/collab/autoEdit.js";
 
 	let ready = $state(false);
 	let hasNote = $state(false);
@@ -16,7 +16,9 @@
 		}
 		const all = await listNotes();
 		if (all.length > 0) {
-			const latest = [...all].sort((a, b) => (b.changeDate ?? '').localeCompare(a.changeDate ?? ''))[0];
+			const latest = [...all].sort((a, b) =>
+				(b.changeDate ?? "").localeCompare(a.changeDate ?? ""),
+			)[0];
 			goto(`/note/${latest.guid}?from=home`, { replaceState: true });
 			return;
 		}
@@ -38,8 +40,13 @@
 		{:else if !hasNote}
 			<div class="empty-state">
 				<p class="empty-title">환영합니다</p>
-				<p class="empty-hint">아직 노트가 없습니다.<br />새 노트를 만들어 보세요.</p>
-				<button class="create-btn" onclick={handleNewNote}>새 노트 만들기</button>
+				<p class="empty-hint">
+					아직 노트가 없습니다.<br />닉네임 설정 후 새 노트를 만들어
+					보세요.
+				</p>
+				<button class="create-btn" onclick={handleNewNote}
+					>새 노트 만들기</button
+				>
 			</div>
 		{/if}
 	</div>
