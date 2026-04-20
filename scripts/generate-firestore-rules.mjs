@@ -84,8 +84,13 @@ function resolveCollections({ role, defaultName }) {
 	const listRaw = lookup(listKey);
 	let names;
 	if (listRaw !== undefined) {
+		// Accept ASCII comma, fullwidth comma (U+FF0C) and semicolons as
+		// separators. IME-typed commas are a frequent foot-gun: they look
+		// identical to ASCII commas in most terminals but String.split(',')
+		// treats the value as a single name, producing a rules file like
+		// `match /a,b/{id}` that the Firestore compiler rejects.
 		names = listRaw
-			.split(',')
+			.split(/[,，;；]/)
 			.map((s) => s.trim())
 			.filter(Boolean);
 		if (names.length === 0) {
@@ -135,7 +140,11 @@ const summary = [];
 for (const spec of ROLES) {
 	const names = resolveCollections(spec);
 	rendered = expandBlock(rendered, spec.block, spec.placeholder, names);
-	summary.push(`  ${spec.role.padEnd(12)} -> ${names.join(', ')}`);
+	// Print the count so a silent "one name with a comma inside" failure
+	// stands out — (1 name) when the user expected (2 names) is the
+	// signal to check for fullwidth/IME punctuation in the env value.
+	const count = `${names.length} name${names.length === 1 ? '' : 's'}`;
+	summary.push(`  ${spec.role.padEnd(12)} (${count}) -> ${names.join(', ')}`);
 }
 
 writeFileSync(OUT, rendered);
