@@ -1,5 +1,5 @@
 import { getSetting, setSetting } from './appSettings.js';
-import { isFirebaseConfigured } from '$lib/firebase/firebaseClient.js';
+import { APP_SETTINGS_COLLECTION, isFirebaseConfigured } from '$lib/firebase/firebaseClient.js';
 
 /**
  * Cross-device key/value settings. Writes to Firestore
@@ -17,7 +17,7 @@ import { isFirebaseConfigured } from '$lib/firebase/firebaseClient.js';
  * model as note documents. Do not stash secrets here.
  */
 
-const COLLECTION = 'appSettings';
+const COLLECTION = APP_SETTINGS_COLLECTION;
 
 /**
  * Setting id for the notebook names shown as tabs in the top nav.
