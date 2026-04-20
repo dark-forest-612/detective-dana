@@ -20,7 +20,7 @@ rules_version = '2';
 
 service cloud.firestore {
 	match /databases/{database}/documents {
-		match /notes_chunseek/{guid} {
+		match /notes_dana/{guid} {
 			allow read: if true;
 
 			// New note: anyone can create (no existing lock to check).
@@ -53,7 +53,7 @@ service cloud.firestore {
 
 		// Cross-device app settings (e.g. tab notebooks). Same cooperative
 		// trust model as notes — open until Phase 5 lands Auth/App Check.
-		match /appSettings-chunseek/{id} {
+		match /appSettings-dana/{id} {
 			allow read, write: if true;
 		}
 	}
