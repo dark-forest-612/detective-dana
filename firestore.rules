@@ -18,7 +18,7 @@ rules_version = '2';
 // PUBLIC_FIREBASE_APP_SETTINGS_COLLECTION in .env (defaults: notes,
 // appSettings).
 
-service cloud.firestore {
+service cloud.firestore { 
 	match /databases/{database}/documents {
 		match /notes_chunseek/{guid} {
 			allow read: if true;
