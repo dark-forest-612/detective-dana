@@ -248,12 +248,26 @@
 			return false;
 		}
 		saving = true;
-		const updated = await updateNoteFromEditor(note.guid, pendingDoc);
-		if (updated) note = updated;
-		lastSavedDocFingerprint = fingerprint;
+		const result = await updateNoteFromEditor(note.guid, pendingDoc);
+		if (result.ok) {
+			note = result.note;
+			lastSavedDocFingerprint = fingerprint;
+		} else {
+			// Surface the validation failure; leave the fingerprint so the
+			// next flush retries the save once the title is fixed. The
+			// TomboyEditor blur-validator plugin keeps the caret pinned in
+			// the title block while it's invalid.
+			if (result.error.kind === 'tooShort') {
+				pushToast(`제목은 최소 ${result.error.minLength}글자 이상이어야 합니다.`, {
+					kind: 'error'
+				});
+			} else if (result.error.kind === 'duplicate') {
+				pushToast('같은 제목의 노트가 이미 있습니다.', { kind: 'error' });
+			}
+		}
 		pendingDoc = null;
 		saving = false;
-		return true;
+		return result.ok;
 	}
 
 	async function handleInternalLink(target: string) {

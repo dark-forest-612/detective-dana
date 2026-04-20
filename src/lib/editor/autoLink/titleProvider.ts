@@ -60,7 +60,6 @@ async function doSharedRefresh(): Promise<void> {
 			const trimmed = n.title.trim();
 			if (!trimmed) continue;
 			next.push({
-				titleLower: trimmed.toLocaleLowerCase(),
 				original: n.title,
 				guid: n.guid
 			});
@@ -73,10 +72,10 @@ async function doSharedRefresh(): Promise<void> {
 		// single unnecessary broadcast in a workspace with N editors costs
 		// O(N * doc * titles) main-thread work with no observable effect.
 		//
-		// Equivalence is checked order-independently on (guid, titleLower,
-		// original). The sort order from listNotes() is `changeDate` desc,
-		// and most refreshes fire for reasons that don't alter changeDates,
-		// but we shouldn't *require* stable ordering to skip the broadcast.
+		// Equivalence is checked order-independently on (guid, original).
+		// The sort order from listNotes() is `changeDate` desc, and most
+		// refreshes fire for reasons that don't alter changeDates, but we
+		// shouldn't *require* stable ordering to skip the broadcast.
 		const unchanged = entriesEquivalent(sharedEntries, next);
 		sharedEntries = next;
 		if (unchanged) return;
@@ -95,7 +94,6 @@ function entriesEquivalent(a: TitleEntry[], b: TitleEntry[]): boolean {
 	for (const e of b) {
 		const match = byGuid.get(e.guid);
 		if (!match) return false;
-		if (match.titleLower !== e.titleLower) return false;
 		if (match.original !== e.original) return false;
 	}
 	return true;

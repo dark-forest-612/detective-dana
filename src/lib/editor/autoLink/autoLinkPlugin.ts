@@ -344,14 +344,14 @@ function applyInRange(
 		return false;
 	});
 
-	// Precompute a set of lower-cased titles for fast membership check in
-	// Pass 1's preservation logic.
-	const knownTitlesLower = new Set<string>();
+	// Precompute a set of known (case-sensitive, trimmed) titles for fast
+	// membership check in Pass 1's preservation logic.
+	const knownTitles = new Set<string>();
 	for (const t of titles) {
-		const trimmed = t.titleLower.trim();
-		if (trimmed) knownTitlesLower.add(trimmed);
+		const trimmed = t.original.trim();
+		if (trimmed) knownTitles.add(trimmed);
 	}
-	const titlesKnown = knownTitlesLower.size > 0;
+	const titlesKnown = knownTitles.size > 0;
 
 	for (const run of runs) {
 		// Build a "desired" array: for each char index, what target should the
@@ -397,13 +397,12 @@ function applyInRange(
 				const before = p > 0 ? run.text[p - 1] : undefined;
 				const after = q < run.text.length ? run.text[q] : undefined;
 				const targetTrimmed = (target ?? '').trim();
-				const targetLower = targetTrimmed.toLocaleLowerCase();
 				const stillValid =
 					targetTrimmed.length > 0 &&
-					spanText.toLocaleLowerCase() === targetLower &&
+					spanText === targetTrimmed &&
 					!isWordChar(before) &&
 					!isWordChar(after) &&
-					(!titlesKnown || knownTitlesLower.has(targetLower));
+					(!titlesKnown || knownTitles.has(targetTrimmed));
 				if (stillValid) {
 					for (let k = p; k < q; k++) {
 						desired[k] = target;

@@ -12,8 +12,8 @@ export type AcquireLockResult =
  *
  * Implementations must:
  * - Sort `getAll*` results by `changeDate` descending.
- * - Compare titles case-insensitively in `findByTitle` and return the
- *   most recently changed match.
+ * - Compare titles case-SENSITIVELY in `findByTitle` (only whitespace is
+ *   trimmed) and return the most recently changed match.
  * - Acquire/heartbeat atomically so two racing clients never both believe
  *   they hold a lock (Firestore transaction; IDB is single-writer).
  */
@@ -38,7 +38,10 @@ export interface NoteRepository {
 	/** Hard-delete a note. */
 	delete(guid: string): Promise<void>;
 
-	/** Most recently changed note whose title matches `title` case-insensitively. */
+	/**
+	 * Most recently changed note whose title matches `title` case-sensitively
+	 * (whitespace on either side is trimmed before compare).
+	 */
 	findByTitle(title: string): Promise<NoteData | undefined>;
 
 	// --- Collab lock primitives (Phase 4) ---

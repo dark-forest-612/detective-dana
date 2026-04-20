@@ -15,10 +15,17 @@
 	import { createTitleProvider } from "./autoLink/titleProvider.js";
 	import { autoLinkPluginKey } from "./autoLink/autoLinkPlugin.js";
 	import { createImagePreviewPlugin } from "./imagePreview/imagePreviewPlugin.js";
+	import { createTitleBlurValidatorPlugin } from "./titleValidation/titleBlurValidatorPlugin.js";
 	import { TomboyTapSelect } from "./tapSelect/TomboyTapSelect.js";
 	import { tapSelection } from "./tapSelect/tapSelection.svelte.js";
 	import { extractImageFile } from "./imagePreview/extractImageFile.js";
 	import { pushToast } from "$lib/stores/toast.js";
+	import { noteRepository } from "$lib/repository/index.js";
+	import {
+		validateTitle,
+		MIN_TITLE_LENGTH,
+		type TitleValidationError,
+	} from "$lib/core/titleValidator.js";
 	import { Extension } from "@tiptap/core";
 	import { insertTodayDate } from "./insertDate.js";
 	import { sinkListItemOnly, liftListItemOnly, isInList } from "./listItemDepth.js";
@@ -217,6 +224,18 @@
 					name: "tomboyImagePreview",
 					addProseMirrorPlugins() {
 						return [createImagePreviewPlugin()];
+					},
+				}),
+				Extension.create({
+					name: "tomboyTitleBlurValidator",
+					addProseMirrorPlugins() {
+						return [
+							createTitleBlurValidatorPlugin({
+								onLeaveTitle: (titleText) => {
+									void handleTitleBlur(titleText);
+								},
+							}),
+						];
 					},
 				}),
 				...tapSelectExtension,
@@ -453,6 +472,71 @@
 
 	export function getEditor(): Editor | null {
 		return editor;
+	}
+
+	/**
+	 * Called by the title-blur plugin when the caret leaves the first
+	 * block. Runs the full validator (length + uniqueness against the
+	 * repo), and on failure:
+	 *   1) surfaces a warning toast, and
+	 *   2) pulls the caret back into the title block so the user can fix
+	 *      it before navigating further.
+	 *
+	 * `currentGuid` is null for brand-new notes that haven't been
+	 * persisted yet — in that case we skip uniqueness (the note isn't in
+	 * the repo anyway) and only enforce the length rule. The save path
+	 * (`updateNoteFromEditor`) performs the full validation as a
+	 * defense-in-depth gate.
+	 *
+	 * Fires asynchronously: the plugin calls us from inside an
+	 * `appendTransaction`, so we cannot dispatch another transaction
+	 * synchronously (it'd recurse into the same txn pipeline). A
+	 * microtask-delayed focus command avoids that.
+	 */
+	async function handleTitleBlur(titleText: string): Promise<void> {
+		const ed = editor;
+		if (!ed || ed.isDestroyed) return;
+		if (!ed.isEditable) return;
+
+		let error: TitleValidationError | null;
+		if (currentGuid) {
+			error = await validateTitle(titleText, currentGuid, noteRepository);
+		} else {
+			// Length-only fallback for unsaved notes.
+			const trimmed = titleText.trim();
+			error =
+				trimmed.length < MIN_TITLE_LENGTH
+					? {
+							kind: "tooShort",
+							minLength: MIN_TITLE_LENGTH,
+							actual: trimmed.length,
+						}
+					: null;
+		}
+
+		if (!error) return;
+
+		if (error.kind === "tooShort") {
+			pushToast(
+				`제목은 최소 ${error.minLength}글자 이상이어야 합니다.`,
+				{ kind: "error" },
+			);
+		} else if (error.kind === "duplicate") {
+			pushToast("같은 제목의 노트가 이미 있습니다.", { kind: "error" });
+		}
+
+		// Defer the focus command so it doesn't race with the current
+		// transaction (ProseMirror disallows dispatching another tr from
+		// within appendTransaction).
+		queueMicrotask(() => {
+			const e = editor;
+			if (!e || e.isDestroyed) return;
+			// Move the caret to the end of the title block so the user
+			// can append / edit without losing their spot.
+			const firstBlockSize = e.state.doc.child(0).nodeSize;
+			const endOfTitle = Math.max(1, firstBlockSize - 1);
+			e.chain().focus().setTextSelection(endOfTitle).run();
+		});
 	}
 
 	// Phase 1 (collab fork): image hosting backend is not wired up yet.
