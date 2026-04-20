@@ -10,11 +10,11 @@ import {
 	updateDoc,
 	type QueryDocumentSnapshot
 } from 'firebase/firestore';
-import { getFirestoreClient } from '$lib/firebase/firebaseClient.js';
+import { getFirestoreClient, NOTES_COLLECTION } from '$lib/firebase/firebaseClient.js';
 import type { NoteData, NoteLock } from '$lib/core/note.js';
 import type { AcquireLockResult, NoteRepository } from './NoteRepository.js';
 
-const COLLECTION = 'notes';
+const COLLECTION = NOTES_COLLECTION;
 const TEMPLATE_TAG = 'system:template';
 
 function toNoteData(snap: QueryDocumentSnapshot): NoteData {

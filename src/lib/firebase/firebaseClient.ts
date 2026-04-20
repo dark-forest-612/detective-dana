@@ -36,6 +36,11 @@ function readConfig(): FirebaseConfig | null {
  */
 export const isFirebaseConfigured = readConfig() !== null;
 
+export const NOTES_COLLECTION =
+	env.PUBLIC_FIREBASE_NOTES_COLLECTION || 'notes';
+export const APP_SETTINGS_COLLECTION =
+	env.PUBLIC_FIREBASE_APP_SETTINGS_COLLECTION || 'appSettings';
+
 let firebaseApp: FirebaseApp | null = null;
 let firestore: Firestore | null = null;
 
