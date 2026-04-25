@@ -26,7 +26,38 @@ rules_version = '2';
 
 service cloud.firestore {
 	match /databases/{database}/documents {
-		match /notes/{guid} {
+		match /notes_chunseek/{guid} {
+			allow read: if true;
+
+			// New note: anyone can create (no existing lock to check).
+			allow create: if true;
+
+			// Update rules — allowed when any of the following holds:
+			//   1. The stored note has no lock or the lock is null.
+			//   2. The stored lock has expired (TTL grace period).
+			//   3. The incoming write clears the lock (release). We can't
+			//      verify the releaser is the real holder without Auth,
+			//      so we trust the client; the UI only offers the release
+			//      button to the actual holder.
+			//   4. The incoming lock's `holder` matches the stored lock's
+			//      `holder` — same-owner heartbeat or content write
+			//      (content writes use merge:true and never touch lock,
+			//      so `request.resource.data.lock` equals the stored lock
+			//      on content writes).
+			allow update: if
+				!('lock' in resource.data)
+				|| resource.data.lock == null
+				|| resource.data.lock.expiresAtMs < request.time.toMillis()
+				|| request.resource.data.lock == null
+				|| (
+					request.resource.data.lock != null
+					&& request.resource.data.lock.holder == resource.data.lock.holder
+				);
+
+			allow delete: if true;
+		}
+
+		match /notes_dana/{guid} {
 			allow read: if true;
 
 			// New note: anyone can create (no existing lock to check).
@@ -59,7 +90,13 @@ service cloud.firestore {
 
 		// Cross-device app settings (e.g. tab notebooks). Same cooperative
 		// trust model as notes — open until Phase 5 lands Auth/App Check.
-		match /appSettings/{id} {
+		match /appSettings-chunseek/{id} {
+			allow read, write: if true;
+		}
+
+		// Cross-device app settings (e.g. tab notebooks). Same cooperative
+		// trust model as notes — open until Phase 5 lands Auth/App Check.
+		match /appSettings-dana/{id} {
 			allow read, write: if true;
 		}
 	}
