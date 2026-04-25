@@ -2,9 +2,12 @@
  * Pure text-matching utility for the auto-link feature.
  *
  * Given a text blob and a list of note titles, finds non-overlapping
- * substrings of `text` that match any title as a whole "word" (using
- * unicode-aware word boundaries). Longer titles take priority when
- * candidates overlap.
+ * substrings of `text` that match any title. Longer titles take
+ * priority when candidates overlap. The match does not require word
+ * boundaries — a title may sit inside a larger continuous run of
+ * letters (e.g. Korean "강아지" inside "강아지의자리", or a Korean
+ * title followed by a particle). The 5-character minimum on titles
+ * keeps accidental matches rare.
  *
  * Matching is case-SENSITIVE: "Apple" and "apple" are different titles
  * and must match their text exactly (after trimming whitespace).
@@ -93,17 +96,14 @@ export function findTitleMatches(
 			const needle = cand.needle;
 			if (needle.length === 0) continue;
 			if (cursor + needle.length > text.length) continue;
-			// Case-sensitive compare against the raw text.
+			// Case-sensitive compare against the raw text. No word-boundary
+			// check — titles may match inside larger continuous text.
 			if (text.startsWith(needle, cursor)) {
 				const from = cursor;
 				const to = cursor + needle.length;
-				const before = from > 0 ? text[from - 1] : undefined;
-				const after = to < text.length ? text[to] : undefined;
-				if (!isWordChar(before) && !isWordChar(after)) {
-					matches.push({ from, to, target: cand.original, guid: cand.guid });
-					cursor = to;
-					continue outer;
-				}
+				matches.push({ from, to, target: cand.original, guid: cand.guid });
+				cursor = to;
+				continue outer;
 			}
 		}
 		// Advance by one code point (handle surrogate pairs).

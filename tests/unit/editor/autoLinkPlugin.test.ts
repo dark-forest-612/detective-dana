@@ -206,11 +206,25 @@ describe('autoLinkPlugin — CJK text', () => {
 		expect(links[0].target).toBe('서울');
 	});
 
-	it('does not link a Korean title inside a larger Korean word', () => {
+	it('links a Korean title that sits inside a larger Korean word', () => {
+		// Substring match: "서울" inside "서울시에" gets linked. This is
+		// the canonical Korean-particle case the cross-word matching is
+		// designed to handle (e.g. 서울에, 서울이, 서울시에 …).
 		const editor = makeEditor({ titles: [entry('서울')] });
 		typeAtEnd(editor, '서울시에 간다');
 
-		expect(collectLinks(editor)).toHaveLength(0);
+		const links = collectLinks(editor);
+		expect(links).toHaveLength(1);
+		expect(links[0].target).toBe('서울');
+	});
+
+	it('links a Korean title followed by a particle (조사)', () => {
+		const editor = makeEditor({ titles: [entry('톰보이 노트 사용법')] });
+		typeAtEnd(editor, '톰보이 노트 사용법에 따르면, 제목은 대소문자를 구분한다');
+
+		const links = collectLinks(editor);
+		expect(links).toHaveLength(1);
+		expect(links[0].target).toBe('톰보이 노트 사용법');
 	});
 });
 
