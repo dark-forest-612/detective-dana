@@ -49,6 +49,12 @@
 	let recentRanks: Map<string, number> = $state(new Map());
 	let categoryOrder: string[] = $state([]);
 
+	let pinned = $state(false);
+	let hovered = $state(false);
+	let panelRef: HTMLElement | undefined = $state();
+
+	const expanded = $derived(pinned || hovered);
+
 	const orderedNotebooks = $derived(applyCategoryOrder(notebooks, categoryOrder));
 
 	const filteredNotes = $derived.by(() => {
@@ -90,11 +96,20 @@
 		const offCategoryOrder = subscribeSyncedSetting<string[]>(CATEGORY_ORDER_KEY, (order) => {
 			categoryOrder = order ?? [];
 		});
+
+		function handleGlobalPointerDown(event: PointerEvent) {
+			if (panelRef && !panelRef.contains(event.target as Node)) {
+				pinned = false;
+			}
+		}
+		window.addEventListener('pointerdown', handleGlobalPointerDown);
+
 		return () => {
 			off();
 			offNotebooks();
 			offRecentLog();
 			offCategoryOrder();
+			window.removeEventListener('pointerdown', handleGlobalPointerDown);
 		};
 	});
 
@@ -109,7 +124,17 @@
 	}
 </script>
 
-<aside class="side-panel" aria-label="노트 메뉴">
+<aside
+	class="side-panel"
+	class:expanded={expanded}
+	class:pinned={pinned}
+	aria-label="노트 메뉴"
+	bind:this={panelRef}
+	onmouseenter={() => hovered = true}
+	onmouseleave={() => hovered = false}
+	onpointerdown={() => pinned = true}
+	onfocusin={() => pinned = true}
+>
 	<!--
 		Rail: always visible, hosts only the workspace switcher. Its width
 		defines how much of the canvas is permanently reserved on the right
@@ -316,12 +341,9 @@
 		transition: clip-path 180ms ease;
 	}
 
-	/* Reveal triggers: hovering the always-visible rail, or keyboard focus
-	   anywhere in the panel. Once revealed, hovering .main itself keeps it
-	   open so the mouse can cross from rail into main without flicker. */
-	.rail:hover ~ .main,
-	.main:hover,
-	.side-panel:focus-within .main {
+	/* Reveal trigger: JS sets .expanded on the aside when hovered or pinned.
+	   CSS just maps that class to the visible state of .main. */
+	.side-panel.expanded .main {
 		clip-path: inset(0 0 0 0);
 		pointer-events: auto;
 	}
