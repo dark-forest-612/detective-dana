@@ -351,6 +351,28 @@
 		tapSelection.clear();
 	}
 
+	/**
+	 * When the user is editing, treat clicks on the editor's surrounding
+	 * margin / padding as a request to drop the caret at the nearest place
+	 * — almost always the end of the document. ProseMirror only places a
+	 * caret when the click lands inside the contenteditable; without this
+	 * the user has to aim at the actual text line, which is fiddly on
+	 * short notes where most of the visible area is empty.
+	 *
+	 * Read-only mode keeps its existing behavior so tap-select is the only
+	 * thing that responds to clicks on the body.
+	 */
+	function handleEditorAreaClick(e: MouseEvent) {
+		if (!canEdit) return;
+		const editor = getEditor();
+		if (!editor || editor.isDestroyed) return;
+		const target = e.target as HTMLElement | null;
+		// Click landed inside the actual contenteditable surface — let PM
+		// place the caret natively at the clicked position.
+		if (target?.closest('.tiptap')) return;
+		editor.commands.focus('end');
+	}
+
 	async function handleExtractNote() {
 		const editor = getEditor();
 		if (!editor) return;
@@ -527,7 +549,14 @@
 		{/if}
 	</div>
 
-	<div class="editor-area" bind:this={editorAreaEl} onscroll={handleEditorAreaScroll}>
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="editor-area"
+		bind:this={editorAreaEl}
+		onscroll={handleEditorAreaScroll}
+		onclick={handleEditorAreaClick}
+	>
 		{#if loading}
 			<div class="loading">로딩 중...</div>
 		{:else if editorContent}
