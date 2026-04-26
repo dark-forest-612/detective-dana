@@ -11,6 +11,12 @@ import {
 	imagePreviewPluginKey
 } from '$lib/editor/imagePreview/imagePreviewPlugin.js';
 
+function markLoaded(editor: Editor, href: string): void {
+	editor.view.dispatch(
+		editor.state.tr.setMeta(imagePreviewPluginKey, { loadedHref: href })
+	);
+}
+
 let currentEditor: Editor | null = null;
 
 function makeEditor(content: unknown = '<p></p>'): Editor {
@@ -175,12 +181,18 @@ describe('imagePreviewPlugin — decoration set', () => {
 		expect(getDecorations(editor)).toBeInstanceOf(DecorationSet);
 	});
 
-	it('emits two decorations (hidden + widget) for a plain-text image URL', () => {
-		const editor = makeEditor('<p>https://example.com/cat.png</p>');
+	it('emits one decoration (widget only) before load and two (hidden + widget) after load', () => {
+		const url = 'https://example.com/cat.png';
+		const editor = makeEditor(`<p>${url}</p>`);
+		// Pre-load: only the widget. The URL text stays visible until the
+		// browser confirms the image is decoded.
+		expect(decoCount(editor)).toBe(1);
+		markLoaded(editor, url);
+		// Post-load: widget + hidden-URL inline deco.
 		expect(decoCount(editor)).toBe(2);
 	});
 
-	it('emits decorations for a marked image URL too', () => {
+	it('emits decorations for a marked image URL too (widget pre-load, hidden after)', () => {
 		const editor = makeEditor();
 		const url = 'https://example.com/cat.png';
 		editor.commands.insertContent({
@@ -188,6 +200,8 @@ describe('imagePreviewPlugin — decoration set', () => {
 			text: url,
 			marks: [{ type: 'tomboyUrlLink', attrs: { href: url } }]
 		});
+		expect(decoCount(editor)).toBe(1);
+		markLoaded(editor, url);
 		expect(decoCount(editor)).toBe(2);
 	});
 
@@ -196,9 +210,15 @@ describe('imagePreviewPlugin — decoration set', () => {
 		expect(decoCount(editor)).toBe(0);
 
 		editor.commands.insertContent('https://a.com/a.png');
-		expect(decoCount(editor)).toBe(2);
+		// Just the widget pre-load.
+		expect(decoCount(editor)).toBe(1);
 
 		editor.commands.insertContent(' + https://b.com/b.jpg');
+		expect(decoCount(editor)).toBe(2);
+
+		// After both load, both URLs are also hidden.
+		markLoaded(editor, 'https://a.com/a.png');
+		markLoaded(editor, 'https://b.com/b.jpg');
 		expect(decoCount(editor)).toBe(4);
 	});
 

@@ -4,8 +4,9 @@
  * character from the user's perspective.
  *
  * UX:
- *   - The image URL text is hidden (CSS `display: none` via inline
- *     decoration) when it's a valid image URL.
+ *   - While the <img> is still loading, the URL text stays visible so the
+ *     user sees what address is being fetched. Once the image's `load`
+ *     event fires we hide the URL and reveal the image in its place.
  *   - A widget decoration shows the actual <img> at the URL's end.
  *   - Backspace / Delete at a URL boundary deletes the WHOLE URL text.
  *   - ArrowLeft / ArrowRight at a URL boundary skips past the hidden text.
@@ -21,7 +22,7 @@
  */
 
 import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state';
-import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { isImageUrl } from './isImageUrl.js';
 
@@ -44,6 +45,17 @@ export interface ImageUrlRange {
 interface PluginState {
 	decorations: DecorationSet;
 	ranges: ImageUrlRange[];
+	/** Hrefs whose <img> has fired `load` at least once. Persists across doc
+	 *  changes so a URL re-typed after deletion stays "loaded" (the browser
+	 *  cache will satisfy the new <img> immediately, but we don't need to
+	 *  flicker the URL text in/out while we wait for the synthetic load). */
+	loaded: Set<string>;
+}
+
+/** Meta payload to mark a URL as fully loaded; the widget's onload handler
+ *  dispatches this so the plugin can hide the URL text on the next pass. */
+interface ImagePreviewMeta {
+	loadedHref?: string;
 }
 
 // Match http(s) URLs up to the next whitespace / quote / angle bracket.
@@ -89,44 +101,90 @@ export function findImageUrlRanges(doc: PMNode): ImageUrlRange[] {
 	return out;
 }
 
-function buildState(doc: PMNode, opts: ImagePreviewOptions): PluginState {
+function buildState(
+	doc: PMNode,
+	opts: ImagePreviewOptions,
+	loaded: Set<string>
+): PluginState {
 	const ranges = findImageUrlRanges(doc);
 	if (ranges.length === 0) {
-		return { decorations: DecorationSet.empty, ranges };
+		return { decorations: DecorationSet.empty, ranges, loaded };
 	}
 
 	const decos: Decoration[] = [];
 	for (const r of ranges) {
-		// Hide the URL text. inclusiveStart/End: false so that user-typed chars
-		// at either boundary don't get absorbed into the hidden range.
+		const isLoaded = loaded.has(r.href);
+		// Only hide the URL once the image is on screen — until then the
+		// user keeps seeing what URL is being fetched. inclusiveStart/End:
+		// false so that user-typed chars at either boundary don't get
+		// absorbed into the hidden range.
+		if (isLoaded) {
+			decos.push(
+				Decoration.inline(
+					r.from,
+					r.to,
+					{ class: 'tomboy-image-url-hidden' },
+					{ inclusiveStart: false, inclusiveEnd: false }
+				)
+			);
+		}
+		// Image widget at the URL end. The key includes the load state so
+		// PM tears down the loading-state widget and rebuilds with the
+		// loaded styling — the browser cache satisfies the new <img>
+		// immediately, so this isn't a re-fetch.
+		//
+		// `side: -1` associates the widget with the character before its
+		// position (the URL's last char). That makes a caret at `to` render
+		// AFTER the image, while a caret at `from` renders before — the
+		// "image acts like a character with positions on either side"
+		// semantics from the spec. The atomic-key handler swaps `from` ↔
+		// `to` on ArrowLeft/ArrowRight, so both sides are reachable.
 		decos.push(
-			Decoration.inline(
-				r.from,
-				r.to,
-				{ class: 'tomboy-image-url-hidden' },
-				{ inclusiveStart: false, inclusiveEnd: false }
-			)
-		);
-		// Image widget at the URL end.
-		decos.push(
-			Decoration.widget(r.to, () => renderImagePreview(r, opts), {
-				side: 1,
-				key: `img:${r.from}:${r.to}:${r.href}`
+			Decoration.widget(r.to, (view) => renderImagePreview(r, opts, view, isLoaded), {
+				side: -1,
+				key: `img:${r.from}:${r.to}:${r.href}:${isLoaded ? 'loaded' : 'loading'}`
 			})
 		);
 	}
-	return { decorations: DecorationSet.create(doc, decos), ranges };
+	return { decorations: DecorationSet.create(doc, decos), ranges, loaded };
 }
 
-function renderImagePreview(range: ImageUrlRange, opts: ImagePreviewOptions): HTMLElement {
+function renderImagePreview(
+	range: ImageUrlRange,
+	opts: ImagePreviewOptions,
+	view: EditorView,
+	isLoaded: boolean
+): HTMLElement {
 	const img = document.createElement('img');
 	img.src = range.href;
 	img.alt = '';
-	img.className = 'tomboy-image-preview';
-	img.loading = 'lazy';
+	img.className = isLoaded ? 'tomboy-image-preview' : 'tomboy-image-preview tomboy-image-loading';
+	// Decode synchronously when possible so the widget swap happens in the
+	// same paint that hides the URL — avoids a one-frame flash of empty.
 	img.decoding = 'async';
 	img.setAttribute('contenteditable', 'false');
 	img.draggable = false;
+
+	if (!isLoaded) {
+		const onLoad = () => {
+			img.removeEventListener('load', onLoad);
+			img.removeEventListener('error', onLoad);
+			view.dispatch(
+				view.state.tr.setMeta(imagePreviewPluginKey, {
+					loadedHref: range.href
+				} satisfies ImagePreviewMeta)
+			);
+		};
+		img.addEventListener('load', onLoad);
+		// On error we still flip to "loaded" so the user isn't stuck staring
+		// at the URL forever; the broken-image glyph will appear in place.
+		img.addEventListener('error', onLoad);
+		// Cached images may have already completed by the time we attach
+		// the listener — handle that synchronously.
+		if (img.complete && img.naturalWidth > 0) {
+			queueMicrotask(onLoad);
+		}
+	}
 
 	// Click on the image → open the viewer modal. Deletion still works via
 	// Backspace immediately after the (hidden) URL — see `handleAtomicKey`.
@@ -196,10 +254,16 @@ export function createImagePreviewPlugin(opts: ImagePreviewOptions = {}): Plugin
 	return new Plugin<PluginState>({
 		key: imagePreviewPluginKey,
 		state: {
-			init: (_, s) => buildState(s.doc, opts),
+			init: (_, s) => buildState(s.doc, opts, new Set<string>()),
 			apply(tr, old) {
-				if (!tr.docChanged) return old;
-				return buildState(tr.doc, opts);
+				const meta = tr.getMeta(imagePreviewPluginKey) as ImagePreviewMeta | undefined;
+				let loaded = old.loaded;
+				if (meta?.loadedHref && !loaded.has(meta.loadedHref)) {
+					loaded = new Set(loaded);
+					loaded.add(meta.loadedHref);
+				}
+				if (!tr.docChanged && loaded === old.loaded) return old;
+				return buildState(tr.doc, opts, loaded);
 			}
 		},
 		props: {

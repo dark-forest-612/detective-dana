@@ -704,7 +704,11 @@
 
 	   Sizing: default to the image's natural size, but cap to the note's
 	   visible width (max-width: 100%) and height (max-height: 100cqh, the
-	   size-container set on .tomboy-editor). Aspect ratio is preserved. */
+	   size-container set on .tomboy-editor). Aspect ratio is preserved.
+
+	   `display: block` enforces the spec rule that the image owns its line —
+	   any text that shares the paragraph wraps before/after the image, so
+	   the user effectively can't share a line with it. */
 	.tomboy-editor :global(img.tomboy-image-preview) {
 		display: block;
 		max-width: 100%;
@@ -717,10 +721,18 @@
 		cursor: pointer;
 	}
 
-	/* Image-URL text is hidden so the image alone represents the link.
-	   Delete / ArrowLeft / ArrowRight are intercepted in the plugin so the
-	   hidden URL behaves atomically — i.e. Backspace at the end of the URL
-	   removes the whole URL, arrow keys skip across it. */
+	/* While the image fetch is in flight, keep the widget out of layout so
+	   the URL text remains visible in its place. The plugin flips the class
+	   off (and adds the URL-hidden inline deco) once `load` fires. */
+	.tomboy-editor :global(img.tomboy-image-preview.tomboy-image-loading) {
+		display: none;
+	}
+
+	/* Image-URL text is hidden (only after the image has loaded) so the
+	   image alone represents the link. Delete / ArrowLeft / ArrowRight are
+	   intercepted in the plugin so the hidden URL behaves atomically — i.e.
+	   Backspace at the end of the URL removes the whole URL, arrow keys
+	   skip across it. */
 	.tomboy-editor :global(.tomboy-image-url-hidden) {
 		display: none;
 	}

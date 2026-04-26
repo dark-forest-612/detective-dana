@@ -13,6 +13,15 @@ import {
 	handleAtomicKey
 } from '$lib/editor/imagePreview/imagePreviewPlugin.js';
 
+/** Mark a URL as "loaded" by dispatching the same meta the widget's onload
+ *  handler uses. Lets pre-load and post-load decoration sets be tested
+ *  without spinning up a real browser image fetch. */
+function markLoaded(editor: Editor, href: string): void {
+	editor.view.dispatch(
+		editor.state.tr.setMeta(imagePreviewPluginKey, { loadedHref: href })
+	);
+}
+
 let currentEditor: Editor | null = null;
 
 function makeEditor(content: unknown = '<p></p>'): Editor {
@@ -84,8 +93,16 @@ describe('imagePreviewPlugin — URL is hidden + image shown', () => {
 			);
 	}
 
-	it('emits an inline hidden decoration covering the URL', () => {
+	it('does NOT hide the URL until the image has loaded', () => {
 		const editor = makeEditor('<p>https://example.com/cat.png</p>');
+		// Pre-load: the user should still see the URL text so they know
+		// what is being fetched.
+		expect(findInlineHidden(editor)).toHaveLength(0);
+	});
+
+	it('hides the URL once the load event has fired', () => {
+		const editor = makeEditor('<p>https://example.com/cat.png</p>');
+		markLoaded(editor, 'https://example.com/cat.png');
 		const hidden = findInlineHidden(editor);
 		expect(hidden).toHaveLength(1);
 		// Range should cover the URL text (1..1+len)
@@ -93,7 +110,7 @@ describe('imagePreviewPlugin — URL is hidden + image shown', () => {
 		expect(hidden[0].to).toBe(1 + 'https://example.com/cat.png'.length);
 	});
 
-	it('emits a widget image decoration at the URL end position', () => {
+	it('emits a widget image decoration at the URL end position even before load', () => {
 		const editor = makeEditor('<p>https://example.com/cat.png</p>');
 		const widgets = findWidgets(editor);
 		expect(widgets).toHaveLength(1);

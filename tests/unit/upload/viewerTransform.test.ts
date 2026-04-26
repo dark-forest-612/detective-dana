@@ -79,15 +79,27 @@ describe('fitToViewport', () => {
 		expect(t.scale).toBeCloseTo(0.5);
 	});
 
-	it('upscales a small image so it fills the viewport (가능한 한 크게)', () => {
+	it('keeps a small image at its natural size (modal acts as a frame; never upscales)', () => {
 		const t = fitToViewport({ imageW: 200, imageH: 100, viewportW: 800, viewportH: 600 });
-		// w-ratio 4, h-ratio 6 → fit = 4
-		expect(t.scale).toBeCloseTo(4);
+		// Image fits the modal — show it 1:1, centred by the consumer.
+		expect(t.scale).toBeCloseTo(1);
 	});
 
 	it('returns scale 1 when the image is exactly the viewport size', () => {
 		const t = fitToViewport({ imageW: 800, imageH: 600, viewportW: 800, viewportH: 600 });
 		expect(t.scale).toBeCloseTo(1);
+	});
+
+	it('does not upscale when the image is smaller than the viewport in both axes', () => {
+		const t = fitToViewport({ imageW: 50, imageH: 50, viewportW: 800, viewportH: 600 });
+		expect(t.scale).toBeCloseTo(1);
+	});
+
+	it('downscales (preserving ratio) when only one axis exceeds the viewport', () => {
+		// Image is 2000x100 → wider than 800 viewport but well within height.
+		const t = fitToViewport({ imageW: 2000, imageH: 100, viewportW: 800, viewportH: 600 });
+		// w-ratio 0.4, h-ratio 6, cap 1 → min = 0.4
+		expect(t.scale).toBeCloseTo(0.4);
 	});
 
 	it('returns identity (scale 1) when image dimensions are zero', () => {
