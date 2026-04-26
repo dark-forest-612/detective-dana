@@ -67,6 +67,9 @@ export function fitToViewport(input: FitInput): Transform {
 	}
 	const wRatio = input.viewportW / input.imageW;
 	const hRatio = input.viewportH / input.imageH;
-	const scale = Math.min(wRatio, hRatio);
+	// Show the image at its natural size when it fits the modal, and scale
+	// down (preserving aspect ratio) only when it's larger. The modal acts
+	// as a frame: never upscale past 1:1 for the initial fit.
+	const scale = Math.min(wRatio, hRatio, 1);
 	return { scale, x: 0, y: 0 };
 }
