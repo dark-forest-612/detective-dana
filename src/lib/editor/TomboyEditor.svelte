@@ -592,6 +592,7 @@
 <div
 	bind:this={editorElement}
 	class="tomboy-editor"
+	class:tap-select-active={enableTapSelect && !editable}
 	oncontextmenu={handleContextMenu}
 ></div>
 
@@ -738,6 +739,17 @@
 		background-color: #bfdbfe;
 		border-radius: 2px;
 		box-shadow: 0 0 0 1px #60a5fa;
+	}
+
+	/* When tap-select is the active selection model (mobile /note/[id] in
+	   read-only mode), suppress the browser's native text selection — on
+	   desktop a mouse drag would otherwise paint the native blue highlight
+	   on top of our decoration, leaving two overlapping selections visible.
+	   The plugin still receives pointer events because user-select only
+	   gates the visible selection, not event delivery. */
+	.tomboy-editor.tap-select-active :global(.tiptap) {
+		user-select: none;
+		-webkit-user-select: none;
 	}
 
 	/* List items */

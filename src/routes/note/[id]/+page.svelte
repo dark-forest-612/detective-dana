@@ -346,6 +346,11 @@
 		tapSelection.clear();
 	}
 
+	function handleCancelTapSelection() {
+		getEditor()?.commands.clearTapSelection();
+		tapSelection.clear();
+	}
+
 	async function handleExtractNote() {
 		const editor = getEditor();
 		if (!editor) return;
@@ -566,6 +571,7 @@
 		rect={tapSelection.rect}
 		oncopy={handleCopyTapSelection}
 		oncreateNote={handleCreateFromTapSelection}
+		oncancel={handleCancelTapSelection}
 	/>
 {/if}
 

@@ -1,8 +1,9 @@
 <script lang="ts">
-	// Floating two-button menu shown next to a read-mode tap selection.
+	// Floating action menu shown next to a read-mode tap selection.
 	// Mirrors a native context-menu vibe (right-click on desktop, long-press
-	// + drag on mobile) but constrained to the two actions that matter on
-	// the mobile note view: copy the text, or extract it into a new note.
+	// + drag on mobile) but constrained to the actions that matter on the
+	// mobile note view: copy the text, extract it into a new note, or clear
+	// the selection.
 	//
 	// Positioning: anchored to the selection's bounding rect (viewport
 	// coords). We render below the selection by default and flip above when
@@ -13,9 +14,10 @@
 		rect: { left: number; top: number; right: number; bottom: number };
 		oncopy: () => void;
 		oncreateNote: () => void;
+		oncancel: () => void;
 	}
 
-	let { rect, oncopy, oncreateNote }: Props = $props();
+	let { rect, oncopy, oncreateNote, oncancel }: Props = $props();
 
 	let menuEl: HTMLDivElement | undefined = $state(undefined);
 	let menuSize = $state<{ width: number; height: number }>({ width: 0, height: 0 });
@@ -64,6 +66,11 @@
 		e.stopPropagation();
 		oncreateNote();
 	}
+
+	function handleCancel(e: MouseEvent) {
+		e.stopPropagation();
+		oncancel();
+	}
 </script>
 
 <div
@@ -82,6 +89,11 @@
 	<button type="button" class="item" onclick={handleCreate}>
 		<span class="icon" aria-hidden="true">＋</span>
 		<span>새 노트 만들기</span>
+	</button>
+	<div class="sep" aria-hidden="true"></div>
+	<button type="button" class="item" onclick={handleCancel}>
+		<span class="icon" aria-hidden="true">✕</span>
+		<span>선택 취소</span>
 	</button>
 </div>
 
