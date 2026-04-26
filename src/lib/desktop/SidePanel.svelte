@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { listNotes, createNote, sortForList } from '$lib/core/noteManager.js';
+	import { listNotes, createNote } from '$lib/core/noteManager.js';
 	import { markAutoEdit } from '$lib/collab/autoEdit.js';
 	import type { NoteData } from '$lib/core/note.js';
 	import {
@@ -14,6 +14,14 @@
 		setCachedNotes,
 		onInvalidate
 	} from '$lib/stores/noteListCache.js';
+	import {
+		getRecentNoteRanks,
+		onRecentNoteLogChanged
+	} from '$lib/storage/recentNoteLog.js';
+	import { subscribeSyncedSetting } from '$lib/storage/syncedSettings.js';
+	import { CATEGORY_ORDER_KEY } from '$lib/storage/syncedSettings.js';
+	import { applyCategoryOrder } from '$lib/core/categoryOrder.js';
+	import { orderSidePanelNotes } from '$lib/desktop/sidePanelSort.js';
 
 	interface Props {
 		openGuids: Set<string>;
@@ -38,15 +46,19 @@
 	let notebooks: string[] = $state([]);
 	let selectedNotebook = $state<string | null>(null);
 	let query = $state('');
+	let recentRanks: Map<string, number> = $state(new Map());
+	let categoryOrder: string[] = $state([]);
+
+	const orderedNotebooks = $derived(applyCategoryOrder(notebooks, categoryOrder));
 
 	const filteredNotes = $derived.by(() => {
 		const filtered = filterByNotebook(allNotes, selectedNotebook);
 		const q = query.trim();
 		const base = q ? searchNotes(filtered, q, 200).map((r) => r.note) : filtered;
 		// Side panel is a "recents" surface — cap the list so long histories
-		// don't balloon the DOM. 30 is enough for quick access; users who
+		// don't balloon the DOM. 50 is enough for quick access; users who
 		// need more can use search.
-		return sortForList(base, 'changeDate').slice(0, 30);
+		return orderSidePanelNotes(base, recentRanks).slice(0, 50);
 	});
 
 	async function refresh() {
@@ -56,8 +68,13 @@
 		loading = false;
 	}
 
+	async function refreshRecentRanks() {
+		recentRanks = await getRecentNoteRanks();
+	}
+
 	onMount(() => {
 		refresh();
+		refreshRecentRanks();
 		getCachedNotebooks().then((n) => {
 			notebooks = n;
 		});
@@ -67,9 +84,17 @@
 		const offNotebooks = onNotebooksChanged((n) => {
 			notebooks = n;
 		});
+		const offRecentLog = onRecentNoteLogChanged(() => {
+			void refreshRecentRanks();
+		});
+		const offCategoryOrder = subscribeSyncedSetting<string[]>(CATEGORY_ORDER_KEY, (order) => {
+			categoryOrder = order ?? [];
+		});
 		return () => {
 			off();
 			offNotebooks();
+			offRecentLog();
+			offCategoryOrder();
 		};
 	});
 
@@ -128,7 +153,7 @@
 				title="미분류"
 				onclick={() => selectNotebook('')}
 			>미분류</button>
-			{#each notebooks as nb (nb)}
+			{#each orderedNotebooks as nb (nb)}
 				<button
 					type="button"
 					role="tab"
