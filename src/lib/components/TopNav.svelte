@@ -15,8 +15,10 @@
 	} from '$lib/core/notebooks.js';
 	import {
 		subscribeSyncedSetting,
-		TAB_NOTEBOOKS_KEY
+		TAB_NOTEBOOKS_KEY,
+		CATEGORY_ORDER_KEY
 	} from '$lib/storage/syncedSettings.js';
+	import { applyCategoryOrder } from '$lib/core/categoryOrder.js';
 
 	interface Props {
 		canGoBack: boolean;
@@ -31,10 +33,11 @@
 	let allNotebooks: string[] = $state([]);
 	// Raw config — may contain names that no longer exist; sanitise on render.
 	let tabConfig: string[] = $state([]);
+	// Global category ordering (persisted via CATEGORY_ORDER_KEY).
+	let categoryOrder: string[] = $state([]);
 
-	// Up to 3 tab notebooks, filtered to those still in the notebook set.
 	const tabNotebooks = $derived(
-		tabConfig.filter((n) => allNotebooks.includes(n)).slice(0, 3)
+		applyCategoryOrder(tabConfig.filter((n) => allNotebooks.includes(n)), categoryOrder)
 	);
 
 	// Active-tab detection keys off both the pathname and the notebook query.
@@ -63,9 +66,13 @@
 		const offConfig = subscribeSyncedSetting<string[]>(TAB_NOTEBOOKS_KEY, (v) => {
 			tabConfig = Array.isArray(v) ? v : [];
 		});
+		const offCategoryOrder = subscribeSyncedSetting<string[]>(CATEGORY_ORDER_KEY, (v) => {
+			categoryOrder = Array.isArray(v) ? v : [];
+		});
 		return () => {
 			offNotebooks();
 			offConfig();
+			offCategoryOrder();
 		};
 	});
 
@@ -152,7 +159,7 @@
 		</button>
 	</div>
 
-	<nav class="nav-links" aria-label="주요 탐색">
+	<nav class="nav-links nav-links-scroll" aria-label="주요 탐색">
 		<a
 			href="/notes"
 			class="nav-link"
@@ -281,12 +288,24 @@
 		gap: clamp(0px, 0.5vw, 4px);
 		margin-left: clamp(0px, 0.8vw, 4px);
 		min-width: 0;
-		flex-shrink: 1;
-		overflow: hidden;
+		flex: 1;
+	}
+
+	/* nav-links-scroll is applied unconditionally so tests can assert
+	   horizontal-scroll intent via a class check (jsdom cannot compute
+	   Svelte-scoped CSS, so a computed-style assertion would always read ''). */
+	.nav-links-scroll {
+		overflow-x: auto;
+		overflow-y: hidden;
+		scrollbar-width: none;
+	}
+
+	.nav-links-scroll::-webkit-scrollbar {
+		display: none;
 	}
 
 	.nav-spacer {
-		flex: 1;
+		flex-shrink: 0;
 	}
 
 	.nav-link {
