@@ -11,12 +11,19 @@
 		onNotebooksChanged,
 	} from "$lib/core/notebooks.js";
 	import {
+		applyCategoryOrder,
+		moveCategory,
+	} from "$lib/core/categoryOrder.js";
+	import {
 		subscribeSyncedSetting,
 		setSyncedSetting,
 		TAB_NOTEBOOKS_KEY,
+		CATEGORY_ORDER_KEY,
 	} from "$lib/storage/syncedSettings.js";
 
-	const MAX_TAB_NOTEBOOKS = 3;
+	type Tab = '카테고리' | '프로필' | '기기 정보';
+
+	let activeTab: Tab = $state('카테고리');
 
 	let clientId = $state("");
 	let displayName = $state("");
@@ -24,9 +31,9 @@
 
 	let allNotebooks: string[] = $state([]);
 	let selectedTabs: string[] = $state([]);
+	let categoryOrder: string[] = $state([]);
 
-	const selectedCount = $derived(selectedTabs.length);
-	const atLimit = $derived(selectedCount >= MAX_TAB_NOTEBOOKS);
+	const orderedNotebooks = $derived(applyCategoryOrder(allNotebooks, categoryOrder));
 
 	async function refreshNotebooks() {
 		allNotebooks = await getCachedNotebooks();
@@ -45,9 +52,16 @@
 				selectedTabs = Array.isArray(v) ? [...v] : [];
 			},
 		);
+		const offOrder = subscribeSyncedSetting<string[]>(
+			CATEGORY_ORDER_KEY,
+			(v) => {
+				categoryOrder = Array.isArray(v) ? [...v] : [];
+			},
+		);
 		return () => {
 			offNotebooks();
 			offTabs();
+			offOrder();
 		};
 	});
 
@@ -62,10 +76,6 @@
 		const next = selectedTabs.includes(name)
 			? selectedTabs.filter((n) => n !== name)
 			: [...selectedTabs, name];
-		if (next.length > MAX_TAB_NOTEBOOKS) {
-			pushToast(`탭은 최대 ${MAX_TAB_NOTEBOOKS}개까지 선택 가능.`);
-			return;
-		}
 		selectedTabs = next;
 		try {
 			await setSyncedSetting<string[]>(TAB_NOTEBOOKS_KEY, next);
@@ -74,65 +84,112 @@
 			pushToast("저장에 실패했습니다.");
 		}
 	}
+
+	async function handleMove(name: string, direction: 'up' | 'down') {
+		// If name is not yet in the explicit order, seed from current display order
+		const base = categoryOrder.length > 0 ? categoryOrder : orderedNotebooks;
+		const ensured = base.includes(name) ? base : [...base, name];
+		const next = moveCategory(ensured, name, direction);
+		categoryOrder = next;
+		try {
+			await setSyncedSetting<string[]>(CATEGORY_ORDER_KEY, next);
+		} catch (err) {
+			console.warn("[settings] failed to save category order", err);
+			pushToast("저장에 실패했습니다.");
+		}
+	}
 </script>
 
 <div class="settings-page">
+	<div class="tab-strip" role="tablist">
+		{#each (['카테고리', '프로필', '기기 정보'] as Tab[]) as tab (tab)}
+			<button
+				role="tab"
+				aria-selected={activeTab === tab}
+				class="tab-btn"
+				class:active={activeTab === tab}
+				onclick={() => { activeTab = tab; }}
+			>{tab}</button>
+		{/each}
+	</div>
+
 	<main class="settings-content">
-		<section class="section">
-			<h2>탭에 표시할 노트북 (최대 {MAX_TAB_NOTEBOOKS}개)</h2>
-			<p class="info-text">
-				선택한 노트북이 상단 탭에 "전체" 옆에 나타남.
-			</p>
-			{#if allNotebooks.length === 0}
-				<p class="empty">아직 노트북이 없습니다.</p>
-			{:else}
-				<ul class="tab-list">
-					{#each allNotebooks as nb (nb)}
-						{@const checked = selectedTabs.includes(nb)}
-						<li>
-							<label
-								class="tab-row"
-								class:disabled={!checked && atLimit}
-							>
-								<input
-									type="checkbox"
-									{checked}
-									disabled={!checked && atLimit}
-									onchange={() => toggleTab(nb)}
-								/>
-								<span class="tab-name">🗂 {nb}</span>
-							</label>
-						</li>
-					{/each}
-				</ul>
-				<p class="count-hint">
-					{selectedCount} / {MAX_TAB_NOTEBOOKS} 선택됨
-				</p>
-			{/if}
-		</section>
-
-		<section class="section">
-			<h2>닉네임</h2>
-			<div class="name-row">
-				<input
-					class="name-input"
-					type="text"
-					placeholder="닉네임 (선택)"
-					bind:value={displayName}
-					maxlength="40"
-					onkeydown={(e) => e.key === "Enter" && handleSaveName()}
-				/>
-				<button class="btn-save" onclick={handleSaveName}>
-					{saved ? "저장됨" : "저장"}
-				</button>
+		{#if activeTab === '카테고리'}
+			<div role="tabpanel" id="panel-categories" class="tab-panel">
+				<section class="section">
+					<h2>네비게이션 바에 표시할 카테고리</h2>
+					<p class="info-text">
+						선택한 노트북이 상단 탭에 "전체" 옆에 나타남.
+					</p>
+					{#if orderedNotebooks.length === 0}
+						<p class="empty">아직 노트북이 없습니다.</p>
+					{:else}
+						<div class="category-list-scroll" style="max-height: 50vh; overflow-y: auto;">
+							<ul class="tab-list">
+								{#each orderedNotebooks as nb, i (nb)}
+									{@const checked = selectedTabs.includes(nb)}
+									<li class="category-row">
+										<label class="tab-row">
+											<input
+												type="checkbox"
+												aria-label={nb}
+												{checked}
+												onchange={() => toggleTab(nb)}
+											/>
+											<span class="tab-name">🗂 {nb}</span>
+										</label>
+										<div class="order-btns">
+											<button
+												aria-label="▲"
+												class="order-btn"
+												disabled={i === 0}
+												onclick={() => handleMove(nb, 'up')}
+											>▲</button>
+											<button
+												aria-label="▼"
+												class="order-btn"
+												disabled={i === orderedNotebooks.length - 1}
+												onclick={() => handleMove(nb, 'down')}
+											>▼</button>
+										</div>
+									</li>
+								{/each}
+							</ul>
+						</div>
+						<p class="count-hint">
+							{selectedTabs.length}개 선택됨
+						</p>
+					{/if}
+				</section>
 			</div>
-		</section>
-
-		<section class="section">
-			<h2>기기 ID</h2>
-			<p class="info-text">디버깅 용.</p>
-			<code class="client-id">{clientId}</code>
-		</section>
+		{:else if activeTab === '프로필'}
+			<div role="tabpanel" id="panel-profile" class="tab-panel">
+				<section class="section">
+					<h2>닉네임</h2>
+					<div class="name-row">
+						<input
+							class="name-input"
+							type="text"
+							placeholder="닉네임 (선택)"
+							bind:value={displayName}
+							maxlength="40"
+							onkeydown={(e) => e.key === "Enter" && handleSaveName()}
+						/>
+						<button class="btn-save" onclick={handleSaveName}>
+							{saved ? "저장됨" : "저장"}
+						</button>
+					</div>
+				</section>
+			</div>
+		{:else if activeTab === '기기 정보'}
+			<div role="tabpanel" id="panel-device" class="tab-panel">
+				<section class="section">
+					<h2>기기 ID</h2>
+					<p class="info-text">디버깅 용.</p>
+					<code class="client-id">{clientId}</code>
+				</section>
+			</div>
+		{/if}
 	</main>
 </div>
 
@@ -141,6 +198,31 @@
 		display: flex;
 		flex-direction: column;
 		height: 100%;
+	}
+
+	.tab-strip {
+		display: flex;
+		border-bottom: 1px solid var(--color-border, #dee2e6);
+		padding: 0 16px;
+		gap: 4px;
+		flex-shrink: 0;
+	}
+
+	.tab-btn {
+		padding: 10px 16px;
+		border: none;
+		border-bottom: 2px solid transparent;
+		background: none;
+		font-size: 0.9rem;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		white-space: nowrap;
+	}
+
+	.tab-btn.active {
+		color: var(--color-primary);
+		border-bottom-color: var(--color-primary);
+		font-weight: 600;
 	}
 
 	.settings-content {
@@ -187,6 +269,11 @@
 		border-top: 1px solid var(--color-border, #eee);
 	}
 
+	.category-row {
+		display: flex;
+		align-items: center;
+	}
+
 	.tab-row {
 		display: flex;
 		align-items: center;
@@ -194,11 +281,8 @@
 		padding: 12px 14px;
 		cursor: pointer;
 		color: var(--color-text);
-	}
-
-	.tab-row.disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
+		flex: 1;
+		min-width: 0;
 	}
 
 	.tab-row input[type="checkbox"] {
@@ -212,6 +296,30 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.order-btns {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding: 4px 8px 4px 0;
+		flex-shrink: 0;
+	}
+
+	.order-btn {
+		padding: 2px 6px;
+		border: 1px solid var(--color-border, #dee2e6);
+		border-radius: 4px;
+		background: var(--color-bg, #fff);
+		color: var(--color-text);
+		font-size: 0.75rem;
+		cursor: pointer;
+		line-height: 1;
+	}
+
+	.order-btn:disabled {
+		opacity: 0.3;
+		cursor: not-allowed;
 	}
 
 	.count-hint {

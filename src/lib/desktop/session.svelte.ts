@@ -3,6 +3,7 @@ import { getNote, findNoteByTitle } from '$lib/core/noteManager.js';
 import { getHomeNote } from '$lib/core/home.js';
 import { getSetting, setSetting, deleteSetting } from '$lib/storage/appSettings.js';
 import { pushToast } from '$lib/stores/toast.js';
+import { recordNoteOpened } from '$lib/storage/recentNoteLog.js';
 
 const STORAGE_KEY = 'desktop:session';
 const WALLPAPER_KEY = 'desktop:wallpaper';
@@ -394,6 +395,7 @@ export const desktopSession = {
 			bumpZ(ws, existing);
 			focusRequest = { guid, token: ++focusRequestCounter };
 			schedulePersist();
+			void recordNoteOpened(guid).catch(() => {});
 			return;
 		}
 		const cached = ws.geometryByGuid[guid];
@@ -411,6 +413,7 @@ export const desktopSession = {
 		cacheGeometry(ws, win);
 		focusRequest = { guid, token: ++focusRequestCounter };
 		schedulePersist();
+		void recordNoteOpened(guid).catch(() => {});
 	},
 
 	/**
@@ -428,6 +431,7 @@ export const desktopSession = {
 			bumpZ(ws, existing);
 			focusRequest = { guid, token: ++focusRequestCounter };
 			schedulePersist();
+			void recordNoteOpened(guid).catch(() => {});
 			return;
 		}
 		const width = Math.max(MIN_WIDTH, Math.round(pos.width ?? DEFAULT_WIDTH));
@@ -445,6 +449,7 @@ export const desktopSession = {
 		cacheGeometry(ws, win);
 		focusRequest = { guid, token: ++focusRequestCounter };
 		schedulePersist();
+		void recordNoteOpened(guid).catch(() => {});
 	},
 
 	openSettings(): void {
