@@ -186,8 +186,8 @@
 		const tapSelectExtension = enableTapSelect
 			? [
 				TomboyTapSelect.configure({
-					onSelectionChange: (text) => {
-						tapSelection.set(text);
+					onSelectionChange: (info) => {
+						tapSelection.set(info);
 					},
 				}),
 			]

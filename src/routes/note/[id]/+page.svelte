@@ -26,6 +26,7 @@
 	import { markAutoEdit, consumeAutoEdit } from '$lib/collab/autoEdit.js';
 	import { tapSelection } from '$lib/editor/tapSelect/tapSelection.svelte.js';
 	import { getTapSelectRanges } from '$lib/editor/tapSelect/tapSelectPlugin.js';
+	import TapSelectMenu from '$lib/editor/tapSelect/TapSelectMenu.svelte';
 
 	// `$state.raw` for the large-content holders. Svelte's default deep
 	// proxy traps every property read, and TipTap's Editor walks the full
@@ -325,6 +326,26 @@
 		goto(`/note/${target.guid}`);
 	}
 
+	/**
+	 * Copy the active tap selection to the clipboard as plain text.
+	 * Mirrors EditorContextMenu.doCopy but skips the rich-text branch:
+	 * tap-select is a read-mode helper, and the user-visible action is
+	 * "복사하기" — round-tripping through HTML would carry our internal
+	 * mark classes into other apps for no benefit.
+	 */
+	async function handleCopyTapSelection() {
+		const text = tapSelection.text;
+		if (!text) return;
+		try {
+			await navigator.clipboard.writeText(text);
+			pushToast('복사되었습니다.');
+		} catch {
+			pushToast('복사 실패', { kind: 'error' });
+		}
+		getEditor()?.commands.clearTapSelection();
+		tapSelection.clear();
+	}
+
 	async function handleExtractNote() {
 		const editor = getEditor();
 		if (!editor) return;
@@ -539,6 +560,14 @@
 		<button class="fab-random" onclick={gotoRandom} aria-label="랜덤 노트">🎲</button>
 	{/if}
 </div>
+
+{#if tapSelection.text && tapSelection.rect}
+	<TapSelectMenu
+		rect={tapSelection.rect}
+		oncopy={handleCopyTapSelection}
+		oncreateNote={handleCreateFromTapSelection}
+	/>
+{/if}
 
 {#if actionSheetOpen && note}
 	<NoteActionSheet

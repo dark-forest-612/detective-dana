@@ -6,10 +6,14 @@
 // editable or the user navigates to a different note).
 
 import { Extension } from '@tiptap/core';
-import { createTapSelectPlugin, tapSelectPluginKey } from './tapSelectPlugin.js';
+import {
+	createTapSelectPlugin,
+	tapSelectPluginKey,
+	type TapSelectionInfo,
+} from './tapSelectPlugin.js';
 
 export interface TomboyTapSelectOptions {
-	onSelectionChange?: (text: string | null) => void;
+	onSelectionChange?: (info: TapSelectionInfo | null) => void;
 }
 
 declare module '@tiptap/core' {

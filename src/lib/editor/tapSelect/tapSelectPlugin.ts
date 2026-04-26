@@ -9,6 +9,12 @@
 // between them in their shared block contains no non-whitespace characters.
 // This lets a user tap across a multi-space gap and still extend.
 //
+// In addition to single taps, a drag gesture (mouse drag, or touch
+// long-press + drag) selects a contiguous range of words within the block
+// the drag started in — so users can sweep over a phrase instead of tapping
+// each word. Touch needs the long-press gate so plain vertical drags still
+// scroll the page.
+//
 // Selection state lives in plugin state and renders as inline decorations
 // (no doc mutation — the note is read-only). Any docChanged transaction
 // (e.g. the editor becoming editable and the user typing, or a remote
@@ -37,14 +43,28 @@ export const tapSelectPluginKey = new PluginKey<TapSelectState>('tomboyTapSelect
 
 const EMPTY_STATE: TapSelectState = { blockStart: null, blockEnd: null, words: [] };
 
+export interface TapSelectionInfo {
+	text: string;
+	rect: { left: number; top: number; right: number; bottom: number } | null;
+}
+
 export interface TapSelectPluginOptions {
-	onSelectionChange?: (text: string | null) => void;
+	onSelectionChange?: (info: TapSelectionInfo | null) => void;
 }
 
 // PM's textBetween substitutes this for non-text nodes (images, etc.) when
 // given as a `leafText`. We treat it as a word separator so images break
 // the selectable run.
 const LEAF_MARKER = '\ufffc';
+
+// Minimum pointer movement (in CSS pixels) before we treat a press as a
+// drag rather than a tap. Mouse uses the smaller threshold; touch uses a
+// larger one because finger jitter is normal during a "stationary" press.
+const MOUSE_DRAG_THRESHOLD_PX = 4;
+const TOUCH_DRAG_THRESHOLD_PX = 10;
+// Touch needs to hold still this long before a drag-select can begin —
+// otherwise a normal vertical scroll would steal text.
+const TOUCH_LONG_PRESS_MS = 280;
 
 function isWordChar(ch: string): boolean {
 	return ch.length > 0 && ch !== LEAF_MARKER && !/\s/.test(ch);
@@ -99,6 +119,43 @@ export function findWordAt(
 		blockStart,
 		blockEnd,
 	};
+}
+
+/**
+ * Find every word range in a block that overlaps the [from, to] character
+ * range (positions in document space). Used by drag-select to expand a
+ * pointer-defined range into the set of words it covers.
+ */
+export function findWordsInRange(
+	block: PMNode,
+	blockStart: number,
+	from: number,
+	to: number,
+): WordRange[] {
+	if (to < from) [from, to] = [to, from];
+	const text = blockTextOf(block);
+	const lo = Math.max(0, from - blockStart);
+	const hi = Math.min(text.length, to - blockStart);
+	const words: WordRange[] = [];
+	let i = 0;
+	while (i < text.length) {
+		if (!isWordChar(text[i])) {
+			i++;
+			continue;
+		}
+		let j = i;
+		while (j < text.length && isWordChar(text[j])) j++;
+		// Overlap test against [lo, hi]. A zero-width range (lo === hi) still
+		// counts as touching the word it lands inside, so we include words
+		// that strictly contain the cursor.
+		const overlaps = i < hi && j > lo;
+		const touches = lo === hi && i <= lo && lo <= j;
+		if (overlaps || touches) {
+			words.push({ from: blockStart + i, to: blockStart + j });
+		}
+		i = j;
+	}
+	return words;
 }
 
 function rangesEqual(a: WordRange, b: WordRange): boolean {
@@ -198,7 +255,79 @@ function selectionText(state: TapSelectState, doc: PMNode): string {
 	return parts.join(' ').trim();
 }
 
+/**
+ * Bounding box of the rendered selection decorations in viewport
+ * coordinates. Returns null when no decoration is currently mounted (e.g.
+ * the selection just cleared, or the view detached).
+ */
+function selectionRect(view: EditorView): TapSelectionInfo['rect'] {
+	const nodes = view.dom.querySelectorAll('.tomboy-tap-select');
+	if (nodes.length === 0) return null;
+	let left = Infinity;
+	let top = Infinity;
+	let right = -Infinity;
+	let bottom = -Infinity;
+	for (const n of nodes) {
+		const r = (n as HTMLElement).getBoundingClientRect();
+		if (r.width === 0 && r.height === 0) continue;
+		if (r.left < left) left = r.left;
+		if (r.top < top) top = r.top;
+		if (r.right > right) right = r.right;
+		if (r.bottom > bottom) bottom = r.bottom;
+	}
+	if (!isFinite(left)) return null;
+	return { left, top, right, bottom };
+}
+
+interface DragState {
+	pointerId: number;
+	pointerType: string;
+	startX: number;
+	startY: number;
+	startPos: number;
+	startWord: WordRange;
+	blockStart: number;
+	blockEnd: number;
+	armed: boolean;
+	armTimer: ReturnType<typeof setTimeout> | null;
+}
+
+function dispatchSelection(
+	view: EditorView,
+	blockStart: number,
+	blockEnd: number,
+	words: WordRange[],
+): void {
+	view.dispatch(
+		view.state.tr.setMeta(tapSelectPluginKey, {
+			type: 'set',
+			blockStart,
+			blockEnd,
+			words,
+		}),
+	);
+}
+
 export function createTapSelectPlugin(options: TapSelectPluginOptions = {}): Plugin<TapSelectState> {
+	let drag: DragState | null = null;
+	// Set true the moment a pointerdown turns into a drag — used to
+	// suppress the browser's synthetic click that follows mouseup, so the
+	// drag selection isn't immediately replaced by a tap on whichever
+	// word the pointer happened to release over.
+	let suppressNextClick = false;
+
+	function clearArmTimer(): void {
+		if (drag?.armTimer) {
+			clearTimeout(drag.armTimer);
+			drag.armTimer = null;
+		}
+	}
+
+	function endDrag(): void {
+		clearArmTimer();
+		drag = null;
+	}
+
 	return new Plugin<TapSelectState>({
 		key: tapSelectPluginKey,
 		state: {
@@ -228,6 +357,10 @@ export function createTapSelectPlugin(options: TapSelectPluginOptions = {}): Plu
 			},
 			handleClick(view: EditorView, pos: number, event: MouseEvent) {
 				if (view.editable) return false;
+				if (suppressNextClick) {
+					suppressNextClick = false;
+					return true;
+				}
 				// Let link-target elements through so other handlers (internal
 				// link navigation, native URL navigation) still fire.
 				const target = event.target as HTMLElement | null;
@@ -237,32 +370,186 @@ export function createTapSelectPlugin(options: TapSelectPluginOptions = {}): Plu
 				const prev = tapSelectPluginKey.getState(view.state) ?? EMPTY_STATE;
 				const block = view.state.doc.resolve(hit.blockStart).parent;
 				const next = applyTap(prev, block, hit);
-				view.dispatch(
-					view.state.tr.setMeta(tapSelectPluginKey, {
-						type: 'set',
-						blockStart: next.blockStart ?? hit.blockStart,
-						blockEnd: next.blockEnd ?? hit.blockEnd,
-						words: next.words,
-					}),
+				dispatchSelection(
+					view,
+					next.blockStart ?? hit.blockStart,
+					next.blockEnd ?? hit.blockEnd,
+					next.words,
 				);
 				return true;
+			},
+			handleDOMEvents: {
+				pointerdown(view, event) {
+					if (view.editable) return false;
+					// Only primary-button presses initiate a drag (mouse middle/right
+					// stay reserved for browser-native context menu, etc.).
+					if (event.button !== undefined && event.button !== 0) return false;
+					const target = event.target as HTMLElement | null;
+					if (target?.closest('a[data-link-target], a[href]')) return false;
+
+					const coords = view.posAtCoords({ left: event.clientX, top: event.clientY });
+					if (!coords) return false;
+					const hit = findWordAt(view.state.doc, coords.pos);
+					if (!hit) return false;
+
+					endDrag();
+					drag = {
+						pointerId: event.pointerId,
+						pointerType: event.pointerType ?? 'mouse',
+						startX: event.clientX,
+						startY: event.clientY,
+						startPos: coords.pos,
+						startWord: hit.word,
+						blockStart: hit.blockStart,
+						blockEnd: hit.blockEnd,
+						armed: false,
+						armTimer: null,
+					};
+					if (drag.pointerType === 'touch') {
+						// Wait for a long-press before claiming the gesture. If
+						// the user starts moving before the timer fires, we
+						// treat it as a scroll and abandon drag selection.
+						drag.armTimer = setTimeout(() => {
+							if (!drag) return;
+							drag.armTimer = null;
+							drag.armed = true;
+						}, TOUCH_LONG_PRESS_MS);
+					} else {
+						drag.armed = true;
+					}
+					return false;
+				},
+				pointermove(view, event) {
+					const d = drag;
+					if (!d || event.pointerId !== d.pointerId) return false;
+					const dx = event.clientX - d.startX;
+					const dy = event.clientY - d.startY;
+					const dist2 = dx * dx + dy * dy;
+
+					if (!d.armed) {
+						// Touch: any movement before the long-press fires aborts
+						// the gesture so the page can scroll instead.
+						if (d.pointerType === 'touch' && dist2 > 16) {
+							endDrag();
+						}
+						return false;
+					}
+
+					const threshold =
+						d.pointerType === 'touch'
+							? TOUCH_DRAG_THRESHOLD_PX
+							: MOUSE_DRAG_THRESHOLD_PX;
+					if (!suppressNextClick && dist2 < threshold * threshold) return false;
+
+					const coords = view.posAtCoords({ left: event.clientX, top: event.clientY });
+					if (!coords) return false;
+					// Constrain the drag to the block it started in. Pointer
+					// excursions outside that block clamp to its bounds so the
+					// selection stays single-block (matches the tap model).
+					const clamped = Math.max(d.blockStart, Math.min(d.blockEnd, coords.pos));
+					const block = view.state.doc.resolve(d.blockStart).parent;
+					const lo = Math.min(d.startPos, clamped);
+					const hi = Math.max(d.startPos, clamped);
+					let words = findWordsInRange(block, d.blockStart, lo, hi);
+					if (words.length === 0) {
+						// Drag landed entirely on whitespace; keep at least the
+						// origin word so the user has feedback.
+						words = [d.startWord];
+					}
+					dispatchSelection(view, d.blockStart, d.blockEnd, words);
+
+					suppressNextClick = true;
+					// Block native selection / scroll while the drag is live.
+					event.preventDefault();
+					return true;
+				},
+				pointerup(_view, event) {
+					if (!drag || event.pointerId !== drag.pointerId) return false;
+					endDrag();
+					return false;
+				},
+				pointercancel(_view, event) {
+					if (!drag || event.pointerId !== drag.pointerId) return false;
+					endDrag();
+					return false;
+				},
+				contextmenu(_view, _event) {
+					// Long-press on touch can synthesize a contextmenu event
+					// mid-drag. Suppress it so it doesn't cancel the selection.
+					if (drag?.armed && drag.pointerType === 'touch') {
+						_event.preventDefault();
+						return true;
+					}
+					return false;
+				},
 			},
 		},
 		view() {
 			let lastText: string | null = null;
+			let lastRectKey: string | null = null;
+			let pendingFrame: number | null = null;
+
+			function notify(view: EditorView): void {
+				const cur = tapSelectPluginKey.getState(view.state);
+				if (!cur || cur.words.length === 0) {
+					if (lastText !== null || lastRectKey !== null) {
+						lastText = null;
+						lastRectKey = null;
+						options.onSelectionChange?.(null);
+					}
+					return;
+				}
+				const text = selectionText(cur, view.state.doc);
+				if (text.length === 0) {
+					if (lastText !== null || lastRectKey !== null) {
+						lastText = null;
+						lastRectKey = null;
+						options.onSelectionChange?.(null);
+					}
+					return;
+				}
+				const rect = selectionRect(view);
+				const rectKey = rect
+					? `${rect.left}|${rect.top}|${rect.right}|${rect.bottom}`
+					: '';
+				if (text === lastText && rectKey === lastRectKey) return;
+				lastText = text;
+				lastRectKey = rectKey;
+				options.onSelectionChange?.({ text, rect });
+			}
+
+			function schedule(view: EditorView): void {
+				if (pendingFrame !== null) return;
+				const win =
+					view.dom.ownerDocument?.defaultView ?? (typeof window !== 'undefined' ? window : null);
+				if (!win) {
+					notify(view);
+					return;
+				}
+				pendingFrame = win.requestAnimationFrame(() => {
+					pendingFrame = null;
+					if (!view.isDestroyed) notify(view);
+				});
+			}
+
 			return {
-				update(view, prevState) {
-					const cur = tapSelectPluginKey.getState(view.state);
-					const old = tapSelectPluginKey.getState(prevState);
-					if (cur === old) return;
-					const text = cur && cur.words.length > 0 ? selectionText(cur, view.state.doc) : '';
-					const normalized = text.length > 0 ? text : null;
-					if (normalized === lastText) return;
-					lastText = normalized;
-					options.onSelectionChange?.(normalized);
+				update(view) {
+					// Decorations are applied on the next paint — defer the rect
+					// read so getBoundingClientRect sees the rendered span,
+					// not the previous frame.
+					schedule(view);
 				},
 				destroy() {
-					if (lastText !== null) options.onSelectionChange?.(null);
+					endDrag();
+					if (pendingFrame !== null && typeof window !== 'undefined') {
+						window.cancelAnimationFrame(pendingFrame);
+						pendingFrame = null;
+					}
+					if (lastText !== null || lastRectKey !== null) {
+						lastText = null;
+						lastRectKey = null;
+						options.onSelectionChange?.(null);
+					}
 				},
 			};
 		},
