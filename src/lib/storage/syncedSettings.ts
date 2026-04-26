@@ -21,9 +21,17 @@ const COLLECTION = APP_SETTINGS_COLLECTION;
 
 /**
  * Setting id for the notebook names shown as tabs in the top nav.
- * Stored as `string[]` in display order (capped to 3 by the UI).
+ * Stored as `string[]` in display order.
  */
 export const TAB_NOTEBOOKS_KEY = 'tabNotebooks';
+
+/**
+ * Setting id for the global ordering of notebook categories. Stored
+ * as a `string[]` of notebook names in display order. Consumed by
+ * the top nav, settings UI, and side panel notebook chips. Names
+ * not present in this list fall back to alphabetical order.
+ */
+export const CATEGORY_ORDER_KEY = 'categoryOrder';
 
 type FirestoreModule = typeof import('firebase/firestore');
 
