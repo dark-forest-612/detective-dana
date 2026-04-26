@@ -42,13 +42,19 @@ describe('findTitleMatches — basic positions', () => {
 	});
 });
 
-describe('findTitleMatches — word boundaries (ASCII)', () => {
-	it('does not match inside a larger word — suffix', () => {
-		expect(findTitleMatches('Foobar', [t('Foo')])).toEqual([]);
+describe('findTitleMatches — cross-word matching (ASCII)', () => {
+	// Matching is now substring-based; titles may sit inside a larger
+	// continuous run of word characters.
+	it('matches as a prefix of a larger word', () => {
+		const m = findTitleMatches('Foobar', [t('Foo')]);
+		expect(m).toHaveLength(1);
+		expect(m[0]).toMatchObject({ from: 0, to: 3 });
 	});
 
-	it('does not match inside a larger word — prefix', () => {
-		expect(findTitleMatches('barFoo', [t('Foo')])).toEqual([]);
+	it('matches as a suffix of a larger word', () => {
+		const m = findTitleMatches('barFoo', [t('Foo')]);
+		expect(m).toHaveLength(1);
+		expect(m[0]).toMatchObject({ from: 3, to: 6 });
 	});
 
 	it('matches when surrounded by punctuation', () => {
@@ -57,22 +63,26 @@ describe('findTitleMatches — word boundaries (ASCII)', () => {
 		expect(m[0]).toMatchObject({ from: 3, to: 6 });
 	});
 
-	it('does not match across an underscore boundary', () => {
-		// underscore counts as a word char → Foo_bar means Foo is not a word on its own
-		expect(findTitleMatches('Foo_bar', [t('Foo')])).toEqual([]);
+	it('matches across underscores', () => {
+		const m = findTitleMatches('Foo_bar', [t('Foo')]);
+		expect(m).toHaveLength(1);
+		expect(m[0]).toMatchObject({ from: 0, to: 3 });
 	});
 });
 
-describe('findTitleMatches — word boundaries (CJK)', () => {
+describe('findTitleMatches — cross-word matching (CJK)', () => {
 	it('matches a Korean title surrounded by spaces', () => {
 		const m = findTitleMatches('나는 서울 에 산다', [t('서울')]);
 		expect(m).toHaveLength(1);
 		expect(m[0].target).toBe('서울');
 	});
 
-	it('does not match a Korean title inside a larger Korean word', () => {
-		// "서울시" contains "서울" but boundary fails on right side
-		expect(findTitleMatches('서울시에 간다', [t('서울')])).toEqual([]);
+	it('matches a Korean title inside a larger Korean word', () => {
+		// "서울시" contains "서울" — substring match is allowed now so
+		// Korean particles attached to titles ("서울에", "서울이") link.
+		const m = findTitleMatches('서울시에 간다', [t('서울')]);
+		expect(m).toHaveLength(1);
+		expect(m[0]).toMatchObject({ from: 0, to: 2, target: '서울' });
 	});
 
 	it('matches a CJK title adjacent to ASCII punctuation', () => {

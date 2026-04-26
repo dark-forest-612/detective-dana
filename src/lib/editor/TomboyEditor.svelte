@@ -19,7 +19,10 @@
 	import { TomboyTapSelect } from "./tapSelect/TomboyTapSelect.js";
 	import { tapSelection } from "./tapSelect/tapSelection.svelte.js";
 	import { extractImageFile } from "./imagePreview/extractImageFile.js";
-	import { pushToast } from "$lib/stores/toast.js";
+	import { uploadImage } from "$lib/upload/blobUpload.js";
+	import { insertImageUrl } from "$lib/upload/insertImageUrl.js";
+	import ImageViewer from "$lib/components/ImageViewer.svelte";
+	import { pushToast, dismissToast } from "$lib/stores/toast.js";
 	import { noteRepository } from "$lib/repository/index.js";
 	import {
 		validateTitle,
@@ -60,6 +63,15 @@
 	}: Props = $props();
 
 	let ctxMenu = $state<{ x: number; y: number } | null>(null);
+	let viewerSrc = $state<string | null>(null);
+
+	function openImageViewer(href: string): void {
+		viewerSrc = href;
+	}
+
+	function closeImageViewer(): void {
+		viewerSrc = null;
+	}
 
 	function handleContextMenu(e: MouseEvent) {
 		if (!enableContextMenu) return;
@@ -223,7 +235,11 @@
 				Extension.create({
 					name: "tomboyImagePreview",
 					addProseMirrorPlugins() {
-						return [createImagePreviewPlugin()];
+						return [
+							createImagePreviewPlugin({
+								onImageClick: openImageViewer,
+							}),
+						];
 					},
 				}),
 				Extension.create({
@@ -539,12 +555,36 @@
 		});
 	}
 
-	// Phase 1 (collab fork): image hosting backend is not wired up yet.
-	// Paste/drop/upload actions land here and surface a toast instead of
-	// silently failing. Firebase Storage integration is Phase 5.
-	export async function uploadAndInsertImage(_file: File): Promise<void> {
-		void _file;
-		pushToast("이미지 업로드는 아직 지원되지 않습니다.", { kind: "error" });
+	// Maximum upload size (8 MB). Beyond this we refuse client-side rather
+	// than burn bandwidth + Vercel quota on a request that may also fail
+	// silently mid-stream on flaky mobile networks.
+	const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+
+	export async function uploadAndInsertImage(file: File): Promise<void> {
+		if (!file.type.startsWith("image/")) {
+			pushToast("이미지 파일만 업로드할 수 있습니다.", { kind: "error" });
+			return;
+		}
+		if (file.size > MAX_UPLOAD_BYTES) {
+			pushToast(
+				`이미지가 너무 큽니다 (최대 ${Math.floor(MAX_UPLOAD_BYTES / (1024 * 1024))}MB).`,
+				{ kind: "error" },
+			);
+			return;
+		}
+		const ed = editor;
+		if (!ed || ed.isDestroyed) return;
+
+		const progressId = pushToast("이미지 업로드 중...", { timeoutMs: 0 });
+		try {
+			const url = await uploadImage(file);
+			insertImageUrl(ed, url);
+			dismissToast(progressId);
+		} catch (err) {
+			dismissToast(progressId);
+			console.error("[uploadAndInsertImage]", err);
+			pushToast("이미지 업로드에 실패했습니다.", { kind: "error" });
+		}
 	}
 </script>
 
@@ -564,6 +604,12 @@
 		{oninternallink}
 	/>
 {/if}
+
+<ImageViewer
+	src={viewerSrc ?? ""}
+	open={viewerSrc !== null}
+	onclose={closeImageViewer}
+/>
 
 <style>
 	.tomboy-editor {

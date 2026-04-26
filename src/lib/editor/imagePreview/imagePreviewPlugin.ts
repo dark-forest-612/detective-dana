@@ -9,22 +9,28 @@
  *   - A widget decoration shows the actual <img> at the URL's end.
  *   - Backspace / Delete at a URL boundary deletes the WHOLE URL text.
  *   - ArrowLeft / ArrowRight at a URL boundary skips past the hidden text.
- *   - Clicking the image selects the full URL range (so Backspace / Delete
- *     then clears it).
+ *   - Clicking the image dispatches `onImageClick(href)` so the consumer
+ *     can open a viewer modal. (Deletion remains via Backspace at the URL
+ *     end — see `handleAtomicKey`.)
  *
  * Invariant: the document itself is NEVER modified by rendering. The URL
  * stays in the doc (and in any surrounding `tomboyUrlLink` mark) verbatim
  * so the Tomboy `.note` XML round-trip is stable. Only *user-driven* key
- * / click actions mutate the doc, and when they do, they delete the
- * WHOLE URL — keeping "image acts like a character" semantics.
+ * actions mutate the doc, and when they do, they delete the WHOLE URL —
+ * keeping "image acts like a character" semantics.
  */
 
 import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state';
-import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { isImageUrl } from './isImageUrl.js';
 
 export const imagePreviewPluginKey = new PluginKey<PluginState>('tomboyImagePreview');
+
+export interface ImagePreviewOptions {
+	/** Called when the user clicks an inline image preview. */
+	onImageClick?: (href: string) => void;
+}
 
 export interface ImageUrlRange {
 	/** Absolute doc position of the URL's first character. */
@@ -83,7 +89,7 @@ export function findImageUrlRanges(doc: PMNode): ImageUrlRange[] {
 	return out;
 }
 
-function buildState(doc: PMNode): PluginState {
+function buildState(doc: PMNode, opts: ImagePreviewOptions): PluginState {
 	const ranges = findImageUrlRanges(doc);
 	if (ranges.length === 0) {
 		return { decorations: DecorationSet.empty, ranges };
@@ -103,7 +109,7 @@ function buildState(doc: PMNode): PluginState {
 		);
 		// Image widget at the URL end.
 		decos.push(
-			Decoration.widget(r.to, (view) => renderImagePreview(r, view), {
+			Decoration.widget(r.to, () => renderImagePreview(r, opts), {
 				side: 1,
 				key: `img:${r.from}:${r.to}:${r.href}`
 			})
@@ -112,7 +118,7 @@ function buildState(doc: PMNode): PluginState {
 	return { decorations: DecorationSet.create(doc, decos), ranges };
 }
 
-function renderImagePreview(range: ImageUrlRange, view: EditorView): HTMLElement {
+function renderImagePreview(range: ImageUrlRange, opts: ImagePreviewOptions): HTMLElement {
 	const img = document.createElement('img');
 	img.src = range.href;
 	img.alt = '';
@@ -122,24 +128,12 @@ function renderImagePreview(range: ImageUrlRange, view: EditorView): HTMLElement
 	img.setAttribute('contenteditable', 'false');
 	img.draggable = false;
 
-	// Click on the image → select the whole (hidden) URL range, so that a
-	// subsequent Backspace / Delete removes it as a single atomic unit —
-	// matching the user-facing "image behaves like a character" model.
-	img.addEventListener('mousedown', (e) => {
+	// Click on the image → open the viewer modal. Deletion still works via
+	// Backspace immediately after the (hidden) URL — see `handleAtomicKey`.
+	img.addEventListener('click', (e) => {
 		e.preventDefault();
-		// Re-derive the current live range from plugin state because doc
-		// mutations may have shifted positions since the widget was rendered.
-		const state = imagePreviewPluginKey.getState(view.state);
-		if (!state) return;
-		const live = state.ranges.find((r) => r.href === range.href && r.to === range.to)
-			?? state.ranges.find((r) => r.href === range.href);
-		if (!live) return;
-		view.dispatch(
-			view.state.tr.setSelection(
-				TextSelection.create(view.state.doc, live.from, live.to)
-			)
-		);
-		view.focus();
+		e.stopPropagation();
+		opts.onImageClick?.(range.href);
 	});
 
 	return img;
@@ -198,14 +192,14 @@ function keyFromEvent(e: KeyboardEvent): AtomicKey | null {
 	return null;
 }
 
-export function createImagePreviewPlugin(): Plugin<PluginState> {
+export function createImagePreviewPlugin(opts: ImagePreviewOptions = {}): Plugin<PluginState> {
 	return new Plugin<PluginState>({
 		key: imagePreviewPluginKey,
 		state: {
-			init: (_, s) => buildState(s.doc),
+			init: (_, s) => buildState(s.doc, opts),
 			apply(tr, old) {
 				if (!tr.docChanged) return old;
-				return buildState(tr.doc);
+				return buildState(tr.doc, opts);
 			}
 		},
 		props: {

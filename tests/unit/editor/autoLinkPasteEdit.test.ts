@@ -91,7 +91,10 @@ describe('autoLinkPlugin — paste then edit breaks match (regression)', () => {
 		expect(markedText(editor)).toContain(TITLE);
 	});
 
-	it('REGRESSION: appending "123" at the end of the pasted title removes the link', () => {
+	it('appending "123" at the end of the pasted title keeps the link on the title portion only', () => {
+		// Under the cross-word matching rule, "<title>123" still contains
+		// the title as a substring, so the link must STAY — but only on
+		// the title chars; the appended "123" is plain text.
 		const editor = makeEditor(titles, 'current-guid');
 		editor.commands.setTextSelection(3);
 		editor.commands.insertContent(TITLE);
@@ -102,11 +105,8 @@ describe('autoLinkPlugin — paste then edit breaks match (regression)', () => {
 		editor.commands.setTextSelection(endOfTitle);
 		editor.commands.insertContent('123');
 
-		// Text should now be "<title>123" and contain no internal-link mark.
-		const linked = collectLinkedTexts(editor).join('');
-		expect(linked).not.toContain(TITLE);
-		// There should be NO tomboyInternalLink mark anywhere.
-		expect(linked).toBe('');
+		const linked = collectLinkedTexts(editor);
+		expect(linked).toEqual([TITLE]);
 	});
 
 	it('REGRESSION: inserting "123 " in the middle of the pasted title removes the link', () => {
@@ -127,24 +127,22 @@ describe('autoLinkPlugin — paste then edit breaks match (regression)', () => {
 		expect(linked).toBe('');
 	});
 
-	it('end-appending with a WORD character extends mark but plugin must remove it', () => {
-		// This mirrors the exact UI behaviour: typing "1" right after the linked
-		// text makes ProseMirror extend the inclusive mark to cover "…1", at
-		// which point the plugin should remove the whole mark because the span
-		// no longer equals the target.
+	it('end-appending one WORD character: plugin shrinks the mark back to the title', () => {
+		// ProseMirror's inclusive mark would extend the mark to "…1", but the
+		// plugin must reconcile: span ≠ target (Pass 1 strips), then Pass 2
+		// re-applies the mark on the substring that still equals the title.
 		const editor = makeEditor(titles, 'current-guid');
 		editor.commands.setTextSelection(3);
 		editor.commands.insertContent(TITLE);
 
-		// Verify mark is there
 		expect(markedText(editor)).toContain(TITLE);
 
 		const endOfTitle = findTextEnd(editor, TITLE);
 		editor.commands.setTextSelection(endOfTitle);
 		editor.commands.insertContent('1');
 
-		// After typing the single '1', the mark must be gone.
-		expect(collectLinkedTexts(editor).join('')).toBe('');
+		// The mark must cover exactly the title — not the trailing "1".
+		expect(collectLinkedTexts(editor)).toEqual([TITLE]);
 	});
 
 	it('REGRESSION: two pasted copies in the same paragraph — editing the 2nd must only affect the 2nd', () => {
@@ -198,16 +196,15 @@ describe('autoLinkPlugin — paste then edit breaks match (regression)', () => {
 		expect(linked[0]).toBe(TITLE);
 	});
 
-	it('REGRESSION: legacy broken mark whose target is not in titles list gets removed', async () => {
+	it('REGRESSION: legacy broken mark gets reconciled to a fresh substring match', async () => {
 		// A real-world artefact from data saved with earlier serializer bugs:
 		// the mark's `target` attribute equals the extended (broken) text
-		// ("title123"), which the plugin's Pass 1 used to preserve because
-		// spanText === target. That left a dead link in the doc even though
-		// no note with that title exists.
+		// ("title123"), which Pass 1 used to preserve because spanText ===
+		// target. The fix: Pass 1 also requires `target` to be a known title.
+		// With cross-word matching, Pass 2 then re-marks the title substring
+		// that lives inside "title123".
 		const editor = makeEditor(titles, 'current-guid');
 		editor.commands.setTextSelection(3);
-		// Insert the broken link shape directly: text carrying a
-		// tomboyInternalLink mark whose target is the MALFORMED text.
 		editor.commands.insertContent({
 			type: 'text',
 			text: TITLE + '123',
@@ -216,26 +213,26 @@ describe('autoLinkPlugin — paste then edit breaks match (regression)', () => {
 			]
 		});
 
-		// Initial state after insertion: plugin already ran once (docChanged).
-		// Since the real note title is TITLE (without 123), the mark should be
-		// removed — the target isn't in the titles list.
+		// The malformed-target mark is dropped (target not in titles); a fresh
+		// mark is applied to the TITLE substring inside "TITLE123".
 		const linked = collectLinkedTexts(editor);
-		expect(linked).toEqual([]);
+		expect(linked).toEqual([TITLE]);
 	});
 
-	it('REGRESSION: two pasted copies, editing the 2nd at its END', () => {
+	it('two pasted copies, appending "123" at the END of the 2nd: both links remain', () => {
+		// Substring rule: "TITLE123" still contains the title, so the second
+		// link survives — its mark span is reconciled to cover only the title
+		// chars. The first untouched copy is unaffected.
 		const editor = makeEditor(titles, 'current-guid');
 		editor.commands.setTextSelection(3);
 		editor.commands.insertContent(TITLE + ' ' + TITLE);
 
 		expect(collectLinkedTexts(editor)).toHaveLength(2);
 
-		// Find end of 2nd title.
 		const docText = editor.state.doc.textContent;
 		const firstEnd = docText.indexOf(TITLE) + TITLE.length;
 		const secondEnd = docText.indexOf(TITLE, firstEnd + 1) + TITLE.length;
 
-		// Walk PM doc to convert textContent offset to PM pos.
 		let pmPos = -1;
 		let cumulative = 0;
 		editor.state.doc.descendants((node, pos) => {
@@ -253,9 +250,7 @@ describe('autoLinkPlugin — paste then edit breaks match (regression)', () => {
 		editor.commands.setTextSelection(pmPos);
 		editor.commands.insertContent('123');
 
-		// 1st link kept, 2nd link removed.
 		const linked = collectLinkedTexts(editor);
-		expect(linked).toHaveLength(1);
-		expect(linked[0]).toBe(TITLE);
+		expect(linked).toEqual([TITLE, TITLE]);
 	});
 });

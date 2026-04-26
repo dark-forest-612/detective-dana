@@ -26,3 +26,4 @@ firestore-debug.log
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+.env*.local

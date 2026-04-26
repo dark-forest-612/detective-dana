@@ -366,9 +366,14 @@ function applyInRange(
 		const locked: boolean[] = new Array(run.text.length).fill(false);
 
 		// Pass 1: preserve existing link spans whose text still matches their
-		// target (case-insensitive, with word-boundary check). Stale spans
-		// (text diverged from target via user editing) are left unlocked and
-		// with desired=null so they will be removed.
+		// target. Stale spans (text diverged from target via user editing)
+		// are left unlocked and with desired=null so they will be removed.
+		//
+		// Cross-word matching means we no longer require word boundaries on
+		// either side: a saved mark on "강아지" is valid even when followed
+		// immediately by another letter (e.g. "강아지의 핵심"). Without this
+		// relaxation, async boot — when the titles list hasn't hydrated yet
+		// — would strip every mark that sits next to a letter.
 		//
 		// An additional safety rule: if the title list IS loaded (non-empty),
 		// we also require the mark's `target` to match a known note title.
@@ -394,14 +399,10 @@ function applyInRange(
 					q++;
 				}
 				const spanText = run.text.slice(p, q);
-				const before = p > 0 ? run.text[p - 1] : undefined;
-				const after = q < run.text.length ? run.text[q] : undefined;
 				const targetTrimmed = (target ?? '').trim();
 				const stillValid =
 					targetTrimmed.length > 0 &&
 					spanText === targetTrimmed &&
-					!isWordChar(before) &&
-					!isWordChar(after) &&
 					(!titlesKnown || knownTitles.has(targetTrimmed));
 				if (stillValid) {
 					for (let k = p; k < q; k++) {
