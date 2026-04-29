@@ -1,12 +1,12 @@
 import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/svelte';
+import { render, screen, cleanup, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import TopNav from '$lib/components/TopNav.svelte';
 import { _resetDBForTest } from '$lib/storage/db.js';
 import { setSetting } from '$lib/storage/appSettings.js';
-import { TAB_NOTEBOOKS_KEY } from '$lib/storage/syncedSettings.js';
+import { TAB_NOTEBOOKS_KEY, CATEGORY_ORDER_KEY } from '$lib/storage/syncedSettings.js';
 
 // page.url is read reactively in TopNav; stub `$app/state` with a
 // mutable URL so individual tests can point at different routes.
@@ -107,5 +107,44 @@ describe('TopNav', () => {
 		render(TopNav, { canGoBack: false, canGoForward: false });
 		await screen.findByRole('link', { name: 'Work' });
 		expect(screen.queryByRole('link', { name: 'Ghost' })).not.toBeInTheDocument();
+	});
+
+	it('등록된 모든 노트북이 렌더된다 (제한 없음)', async () => {
+		await setSetting('notebooksCache', ['A', 'B', 'C', 'D', 'E']);
+		await setSetting(TAB_NOTEBOOKS_KEY, ['A', 'B', 'C', 'D', 'E']);
+		setRoute('/notes');
+		render(TopNav, { canGoBack: false, canGoForward: false });
+		for (const name of ['A', 'B', 'C', 'D', 'E']) {
+			const link = await screen.findByRole('link', { name });
+			expect(link).toHaveAttribute('href', `/notes?notebook=${name}`);
+		}
+	});
+
+	it('카테고리 순서가 적용되어 렌더된다', async () => {
+		await setSetting('notebooksCache', ['A', 'B', 'C']);
+		await setSetting(TAB_NOTEBOOKS_KEY, ['A', 'B', 'C']);
+		await setSetting(CATEGORY_ORDER_KEY, ['C', 'A', 'B']);
+		setRoute('/notes');
+		render(TopNav, { canGoBack: false, canGoForward: false });
+		// Both tabConfig and categoryOrder arrive asynchronously; wait until
+		// the DOM reflects the final ordered state (C, A, B) rather than the
+		// initial insertion order (A, B, C).
+		await waitFor(() => {
+			const links = screen.getAllByRole('link');
+			const notebookLinks = links.filter((l) =>
+				['전체', 'C', 'A', 'B'].includes(l.textContent?.trim() ?? '')
+			);
+			expect(notebookLinks.map((l) => l.textContent?.trim())).toEqual(['전체', 'C', 'A', 'B']);
+		});
+	});
+
+	it('.nav-links 컨테이너는 가로 스크롤을 허용한다', () => {
+		render(TopNav, { canGoBack: false, canGoForward: false });
+		const navLinks = document.querySelector('.nav-links');
+		expect(navLinks).not.toBeNull();
+		// The nav-links-scroll class is added unconditionally to signal that
+		// horizontal scroll is enabled (jsdom cannot compute Svelte-scoped
+		// CSS, so we assert the marker class rather than a computed style).
+		expect(navLinks).toHaveClass('nav-links-scroll');
 	});
 });

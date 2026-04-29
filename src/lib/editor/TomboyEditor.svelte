@@ -186,8 +186,8 @@
 		const tapSelectExtension = enableTapSelect
 			? [
 				TomboyTapSelect.configure({
-					onSelectionChange: (text) => {
-						tapSelection.set(text);
+					onSelectionChange: (info) => {
+						tapSelection.set(info);
 					},
 				}),
 			]
@@ -592,6 +592,7 @@
 <div
 	bind:this={editorElement}
 	class="tomboy-editor"
+	class:tap-select-active={enableTapSelect && !editable}
 	oncontextmenu={handleContextMenu}
 ></div>
 
@@ -704,7 +705,11 @@
 
 	   Sizing: default to the image's natural size, but cap to the note's
 	   visible width (max-width: 100%) and height (max-height: 100cqh, the
-	   size-container set on .tomboy-editor). Aspect ratio is preserved. */
+	   size-container set on .tomboy-editor). Aspect ratio is preserved.
+
+	   `display: block` enforces the spec rule that the image owns its line —
+	   any text that shares the paragraph wraps before/after the image, so
+	   the user effectively can't share a line with it. */
 	.tomboy-editor :global(img.tomboy-image-preview) {
 		display: block;
 		max-width: 100%;
@@ -717,10 +722,18 @@
 		cursor: pointer;
 	}
 
-	/* Image-URL text is hidden so the image alone represents the link.
-	   Delete / ArrowLeft / ArrowRight are intercepted in the plugin so the
-	   hidden URL behaves atomically — i.e. Backspace at the end of the URL
-	   removes the whole URL, arrow keys skip across it. */
+	/* While the image fetch is in flight, keep the widget out of layout so
+	   the URL text remains visible in its place. The plugin flips the class
+	   off (and adds the URL-hidden inline deco) once `load` fires. */
+	.tomboy-editor :global(img.tomboy-image-preview.tomboy-image-loading) {
+		display: none;
+	}
+
+	/* Image-URL text is hidden (only after the image has loaded) so the
+	   image alone represents the link. Delete / ArrowLeft / ArrowRight are
+	   intercepted in the plugin so the hidden URL behaves atomically — i.e.
+	   Backspace at the end of the URL removes the whole URL, arrow keys
+	   skip across it. */
 	.tomboy-editor :global(.tomboy-image-url-hidden) {
 		display: none;
 	}
@@ -738,6 +751,17 @@
 		background-color: #bfdbfe;
 		border-radius: 2px;
 		box-shadow: 0 0 0 1px #60a5fa;
+	}
+
+	/* When tap-select is the active selection model (mobile /note/[id] in
+	   read-only mode), suppress the browser's native text selection — on
+	   desktop a mouse drag would otherwise paint the native blue highlight
+	   on top of our decoration, leaving two overlapping selections visible.
+	   The plugin still receives pointer events because user-select only
+	   gates the visible selection, not event delivery. */
+	.tomboy-editor.tap-select-active :global(.tiptap) {
+		user-select: none;
+		-webkit-user-select: none;
 	}
 
 	/* List items */

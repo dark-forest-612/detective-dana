@@ -16,13 +16,16 @@
 
 	let { src, open, onclose }: Props = $props();
 
-	const SCALE_MIN = 1;
+	// Zoom-out floor is the per-image fit scale (1 for images that fit the
+	// modal, <1 for oversized ones). The user can always return to the
+	// initial fitted view; pinch / wheel cannot shrink past that.
 	const SCALE_MAX = 8;
 	const WHEEL_STEP = 0.0015;
 
 	let viewportEl: HTMLDivElement | undefined = $state(undefined);
 	let imgEl: HTMLImageElement | undefined = $state(undefined);
 	let transform = $state<Transform>({ scale: 1, x: 0, y: 0 });
+	let minScale = $state(1);
 
 	// Active pointers for pinch / pan tracking. Up to two for pinch.
 	const pointers = new Map<number, { x: number; y: number }>();
@@ -36,6 +39,7 @@
 		const vw = viewportEl.clientWidth;
 		const vh = viewportEl.clientHeight;
 		const t = fitToViewport({ imageW: w, imageH: h, viewportW: vw, viewportH: vh });
+		minScale = t.scale;
 		// Centre the image in the viewport.
 		transform = {
 			scale: t.scale,
@@ -110,7 +114,7 @@
 				transform = applyPinch(
 					transform,
 					{ scale: pinchStart.scale * ratio, focalX: focal.x, focalY: focal.y },
-					{ min: SCALE_MIN, max: SCALE_MAX }
+					{ min: minScale, max: SCALE_MAX }
 				);
 			}
 		} else if (pointers.size === 1 && panLastSingle) {
@@ -139,11 +143,11 @@
 		transform = applyPinch(
 			transform,
 			{
-				scale: clampScale(transform.scale * factor, SCALE_MIN, SCALE_MAX),
+				scale: clampScale(transform.scale * factor, minScale, SCALE_MAX),
 				focalX: e.clientX,
 				focalY: e.clientY
 			},
-			{ min: SCALE_MIN, max: SCALE_MAX }
+			{ min: minScale, max: SCALE_MAX }
 		);
 	}
 

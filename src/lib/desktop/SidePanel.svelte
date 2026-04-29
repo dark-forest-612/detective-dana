@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { listNotes, createNote, sortForList } from '$lib/core/noteManager.js';
+	import { listNotes, createNote } from '$lib/core/noteManager.js';
 	import { markAutoEdit } from '$lib/collab/autoEdit.js';
 	import type { NoteData } from '$lib/core/note.js';
 	import {
@@ -14,6 +14,14 @@
 		setCachedNotes,
 		onInvalidate
 	} from '$lib/stores/noteListCache.js';
+	import {
+		getRecentNoteRanks,
+		onRecentNoteLogChanged
+	} from '$lib/storage/recentNoteLog.js';
+	import { subscribeSyncedSetting } from '$lib/storage/syncedSettings.js';
+	import { CATEGORY_ORDER_KEY } from '$lib/storage/syncedSettings.js';
+	import { applyCategoryOrder } from '$lib/core/categoryOrder.js';
+	import { orderSidePanelNotes } from '$lib/desktop/sidePanelSort.js';
 
 	interface Props {
 		openGuids: Set<string>;
@@ -38,15 +46,25 @@
 	let notebooks: string[] = $state([]);
 	let selectedNotebook = $state<string | null>(null);
 	let query = $state('');
+	let recentRanks: Map<string, number> = $state(new Map());
+	let categoryOrder: string[] = $state([]);
+
+	let pinned = $state(false);
+	let hovered = $state(false);
+	let panelRef: HTMLElement | undefined = $state();
+
+	const expanded = $derived(pinned || hovered);
+
+	const orderedNotebooks = $derived(applyCategoryOrder(notebooks, categoryOrder));
 
 	const filteredNotes = $derived.by(() => {
 		const filtered = filterByNotebook(allNotes, selectedNotebook);
 		const q = query.trim();
 		const base = q ? searchNotes(filtered, q, 200).map((r) => r.note) : filtered;
 		// Side panel is a "recents" surface — cap the list so long histories
-		// don't balloon the DOM. 30 is enough for quick access; users who
+		// don't balloon the DOM. 50 is enough for quick access; users who
 		// need more can use search.
-		return sortForList(base, 'changeDate').slice(0, 30);
+		return orderSidePanelNotes(base, recentRanks).slice(0, 50);
 	});
 
 	async function refresh() {
@@ -56,8 +74,13 @@
 		loading = false;
 	}
 
+	async function refreshRecentRanks() {
+		recentRanks = await getRecentNoteRanks();
+	}
+
 	onMount(() => {
 		refresh();
+		refreshRecentRanks();
 		getCachedNotebooks().then((n) => {
 			notebooks = n;
 		});
@@ -67,9 +90,26 @@
 		const offNotebooks = onNotebooksChanged((n) => {
 			notebooks = n;
 		});
+		const offRecentLog = onRecentNoteLogChanged(() => {
+			void refreshRecentRanks();
+		});
+		const offCategoryOrder = subscribeSyncedSetting<string[]>(CATEGORY_ORDER_KEY, (order) => {
+			categoryOrder = order ?? [];
+		});
+
+		function handleGlobalPointerDown(event: PointerEvent) {
+			if (panelRef && !panelRef.contains(event.target as Node)) {
+				pinned = false;
+			}
+		}
+		window.addEventListener('pointerdown', handleGlobalPointerDown);
+
 		return () => {
 			off();
 			offNotebooks();
+			offRecentLog();
+			offCategoryOrder();
+			window.removeEventListener('pointerdown', handleGlobalPointerDown);
 		};
 	});
 
@@ -84,7 +124,17 @@
 	}
 </script>
 
-<aside class="side-panel" aria-label="노트 메뉴">
+<aside
+	class="side-panel"
+	class:expanded={expanded}
+	class:pinned={pinned}
+	aria-label="노트 메뉴"
+	bind:this={panelRef}
+	onmouseenter={() => hovered = true}
+	onmouseleave={() => hovered = false}
+	onpointerdown={() => pinned = true}
+	onfocusin={() => pinned = true}
+>
 	<!--
 		Rail: always visible, hosts only the workspace switcher. Its width
 		defines how much of the canvas is permanently reserved on the right
@@ -128,7 +178,7 @@
 				title="미분류"
 				onclick={() => selectNotebook('')}
 			>미분류</button>
-			{#each notebooks as nb (nb)}
+			{#each orderedNotebooks as nb (nb)}
 				<button
 					type="button"
 					role="tab"
@@ -291,12 +341,9 @@
 		transition: clip-path 180ms ease;
 	}
 
-	/* Reveal triggers: hovering the always-visible rail, or keyboard focus
-	   anywhere in the panel. Once revealed, hovering .main itself keeps it
-	   open so the mouse can cross from rail into main without flicker. */
-	.rail:hover ~ .main,
-	.main:hover,
-	.side-panel:focus-within .main {
+	/* Reveal trigger: JS sets .expanded on the aside when hovered or pinned.
+	   CSS just maps that class to the visible state of .main. */
+	.side-panel.expanded .main {
 		clip-path: inset(0 0 0 0);
 		pointer-events: auto;
 	}
