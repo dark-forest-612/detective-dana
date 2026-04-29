@@ -65,11 +65,11 @@ describe('TopNav', () => {
 		expect(screen.getByLabelText('홈')).toBeInTheDocument();
 	});
 
-	it('홈 버튼 클릭 시 /notes 로 이동', async () => {
+	it('홈 버튼 클릭 시 / 로 이동 (홈 노트로 리다이렉트)', async () => {
 		const user = userEvent.setup();
 		render(TopNav);
 		await user.click(screen.getByLabelText('홈'));
-		expect(gotoMock).toHaveBeenCalledWith('/notes');
+		expect(gotoMock).toHaveBeenCalledWith('/');
 	});
 
 	it('/notes 경로에서 전체 탭이 active', () => {

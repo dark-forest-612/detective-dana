@@ -105,14 +105,14 @@
 
 	function handleSettings() {
 		if (page.url.pathname === '/settings') {
-			goto('/notes');
+			goto('/');
 		} else {
 			goto('/settings');
 		}
 	}
 
 	function handleHome() {
-		goto('/notes');
+		goto('/');
 	}
 
 	function openNote(guid: string) {
