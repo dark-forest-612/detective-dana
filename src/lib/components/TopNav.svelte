@@ -20,14 +20,7 @@
 	} from '$lib/storage/syncedSettings.js';
 	import { applyCategoryOrder } from '$lib/core/categoryOrder.js';
 
-	interface Props {
-		canGoBack: boolean;
-		canGoForward: boolean;
-		onback?: () => void;
-		onforward?: () => void;
-	}
-
-	let { canGoBack, canGoForward, onback, onforward }: Props = $props();
+	// 뒤로가기/앞으로가기 기능을 사용하지 않으므로 별도 props 없음.
 
 	// All notebooks that actually exist (for sanitising the tab config).
 	let allNotebooks: string[] = $state([]);
@@ -112,10 +105,14 @@
 
 	function handleSettings() {
 		if (page.url.pathname === '/settings') {
-			history.back();
+			goto('/notes');
 		} else {
 			goto('/settings');
 		}
+	}
+
+	function handleHome() {
+		goto('/notes');
 	}
 
 	function openNote(guid: string) {
@@ -137,24 +134,10 @@
 
 <header class="topnav {themeClass}">
 	<div class="nav-left">
-		<button
-			class="nav-btn"
-			aria-label="뒤로가기"
-			disabled={!canGoBack}
-			onclick={onback}
-		>
+		<button class="nav-btn" aria-label="홈" onclick={handleHome}>
 			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-				<polyline points="15 18 9 12 15 6" />
-			</svg>
-		</button>
-		<button
-			class="nav-btn"
-			aria-label="앞으로가기"
-			disabled={!canGoForward}
-			onclick={onforward}
-		>
-			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-				<polyline points="9 18 15 12 9 6" />
+				<path d="M3 11 12 3l9 8" />
+				<path d="M5 10v10h14V10" />
 			</svg>
 		</button>
 	</div>

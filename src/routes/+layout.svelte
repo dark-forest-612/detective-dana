@@ -1,11 +1,9 @@
 <script lang="ts">
 	import '../app.css';
 	import { onMount } from 'svelte';
-	import { afterNavigate } from '$app/navigation';
 	import Toast from '$lib/components/Toast.svelte';
 	import TopNav from '$lib/components/TopNav.svelte';
 	import { page } from '$app/state';
-	import { createHistoryTracker } from '$lib/nav/history.js';
 	import { bindViewportHeight } from '$lib/viewport/viewportHeight.js';
 	import { loadFavorites } from '$lib/core/favorites.js';
 
@@ -18,34 +16,10 @@
 	let offline = $state(false);
 	let installPrompt: BeforeInstallPromptEvent | null = $state(null);
 	let showInstallBanner = $state(false);
-	let canGoBack = $state(false);
-	let canGoForward = $state(false);
 
 	interface BeforeInstallPromptEvent extends Event {
 		prompt(): Promise<void>;
 		userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
-	}
-
-	const tracker = createHistoryTracker();
-
-	afterNavigate(({ type }) => {
-		tracker.onNavigate(type);
-		canGoBack = tracker.canGoBack();
-		canGoForward = tracker.canGoForward();
-	});
-
-	function handleBack() {
-		tracker.goBack();
-		canGoBack = tracker.canGoBack();
-		canGoForward = tracker.canGoForward();
-		history.back();
-	}
-
-	function handleForward() {
-		tracker.goForward();
-		canGoBack = tracker.canGoBack();
-		canGoForward = tracker.canGoForward();
-		history.forward();
 	}
 
 	onMount(() => {
@@ -80,12 +54,35 @@
 		window.addEventListener('keydown', swallowAlt);
 		window.addEventListener('keyup', swallowAlt);
 
+		// 뒤로가기/앞으로가기 단축키 차단:
+		//   Alt+Left/Right (Win/Linux/ChromeOS), Cmd+[ / Cmd+] (macOS).
+		const blockNavShortcut = (e: KeyboardEvent) => {
+			if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+				e.preventDefault();
+				return;
+			}
+			if (e.metaKey && (e.key === '[' || e.key === ']')) {
+				e.preventDefault();
+			}
+		};
+		window.addEventListener('keydown', blockNavShortcut);
+
+		// 브라우저 뒤로가기 버튼/제스처 차단: 센티넬 엔트리를 push 해 두고
+		// popstate 가 발생할 때마다 다시 push 해 같은 위치를 유지한다.
+		history.pushState(null, '', location.href);
+		const blockPopstate = () => {
+			history.pushState(null, '', location.href);
+		};
+		window.addEventListener('popstate', blockPopstate);
+
 		return () => {
 			window.removeEventListener('offline', goOffline);
 			window.removeEventListener('online', goOnline);
 			window.removeEventListener('beforeinstallprompt', onInstallPrompt);
 			window.removeEventListener('keydown', swallowAlt);
 			window.removeEventListener('keyup', swallowAlt);
+			window.removeEventListener('keydown', blockNavShortcut);
+			window.removeEventListener('popstate', blockPopstate);
 			unbindViewport();
 		};
 	});
@@ -132,12 +129,7 @@
 	{/if}
 
 	<div class="app-shell">
-		<TopNav
-			{canGoBack}
-			{canGoForward}
-			onback={handleBack}
-			onforward={handleForward}
-		/>
+		<TopNav />
 		<div class="content">
 			{@render children()}
 		</div>
