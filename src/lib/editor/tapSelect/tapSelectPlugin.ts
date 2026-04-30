@@ -162,6 +162,20 @@ function rangesEqual(a: WordRange, b: WordRange): boolean {
 	return a.from === b.from && a.to === b.to;
 }
 
+// Tomboy convention: the first block of the doc IS the note title. Tapping
+// anywhere on it selects the whole title in one shot — usually the user is
+// about to link the title from elsewhere, so single-word taps are awkward.
+function isTitleBlockStart(doc: PMNode, blockStart: number): boolean {
+	if (doc.childCount === 0) return false;
+	return blockStart === 1;
+}
+
+function wordsEqual(a: WordRange[], b: WordRange[]): boolean {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) if (!rangesEqual(a[i], b[i])) return false;
+	return true;
+}
+
 function hasOnlyWhitespace(block: PMNode, blockStart: number, from: number, to: number): boolean {
 	if (to <= from) return true;
 	const slice = block.textBetween(from - blockStart, to - blockStart, LEAF_MARKER, LEAF_MARKER);
@@ -369,6 +383,24 @@ export function createTapSelectPlugin(options: TapSelectPluginOptions = {}): Plu
 				if (!hit) return false;
 				const prev = tapSelectPluginKey.getState(view.state) ?? EMPTY_STATE;
 				const block = view.state.doc.resolve(hit.blockStart).parent;
+
+				if (isTitleBlockStart(view.state.doc, hit.blockStart)) {
+					const allWords = findWordsInRange(
+						block,
+						hit.blockStart,
+						hit.blockStart,
+						hit.blockEnd,
+					);
+					const fullySelected =
+						prev.blockStart === hit.blockStart && wordsEqual(prev.words, allWords);
+					if (fullySelected) {
+						view.dispatch(view.state.tr.setMeta(tapSelectPluginKey, { type: 'clear' }));
+					} else {
+						dispatchSelection(view, hit.blockStart, hit.blockEnd, allWords);
+					}
+					return true;
+				}
+
 				const next = applyTap(prev, block, hit);
 				dispatchSelection(
 					view,
