@@ -476,26 +476,15 @@
 	<div class="editor-meta-bar" class:scrolled>
 		<span class="save-indicator" class:visible={saving}>저장 중...</span>
 		{#if note}
-			<button
-				class="lock-toggle"
-				class:active={lockState.kind === 'held-by-me'}
-				class:readonly={lockState.kind === 'held-by-other'}
-				onclick={toggleLock}
-				disabled={lockState.kind === 'held-by-other' || lockState.kind === 'loading'}
-				title={
-					lockState.kind === 'held-by-me' ? '편집 종료' :
-					lockState.kind === 'held-by-other' ? `${lockState.holderName ?? '다른 사용자'}님이 편집 중` :
-					lockState.kind === 'available' ? '편집 시작' :
-					lockState.kind === 'loading' ? '로딩 중' : '오류'
-				}
-			>
-				{#if lockState.kind === 'held-by-me'}✏️ 편집 중
-				{:else if lockState.kind === 'held-by-other'}👀 읽기 전용
-				{:else if lockState.kind === 'available'}✎ 편집
-				{:else if lockState.kind === 'loading'}…
-				{:else}!
-				{/if}
-			</button>
+			{#if lockState.kind === 'held-by-me'}
+				<button
+					class="lock-toggle active"
+					onclick={toggleLock}
+					title="편집 종료"
+				>
+					✏️ 편집 중
+				</button>
+			{/if}
 			<button
 				class="notebook-chip"
 				onclick={() => (pickerOpen = true)}
@@ -682,15 +671,6 @@
 	.lock-toggle.active {
 		background: rgba(199, 237, 199, 0.95);
 		color: #14532d;
-	}
-
-	.lock-toggle.readonly {
-		background: rgba(238, 224, 196, 0.92);
-		color: #7a4a00;
-	}
-
-	.lock-toggle:disabled {
-		cursor: default;
 	}
 
 	.save-indicator {
