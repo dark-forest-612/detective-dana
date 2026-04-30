@@ -24,7 +24,7 @@
 	import { NoteLockController } from '$lib/collab/noteLockController.svelte.js';
 	import { markAutoEdit, consumeAutoEdit } from '$lib/collab/autoEdit.js';
 	import { tapSelection } from '$lib/editor/tapSelect/tapSelection.svelte.js';
-	import { getTapSelectRanges } from '$lib/editor/tapSelect/tapSelectPlugin.js';
+	import { getTapSelectRanges, closeTapSelectMenu } from '$lib/editor/tapSelect/tapSelectPlugin.js';
 	import TapSelectMenu from '$lib/editor/tapSelect/TapSelectMenu.svelte';
 
 	// `$state.raw` for the large-content holders. Svelte's default deep
@@ -371,6 +371,20 @@
 		editor.commands.focus('end');
 	}
 
+	// 메뉴가 떠 있을 때 에디터/메뉴 바깥(툴바·FAB·메타바·페이지 여백 등)을
+	// 터치하면 메뉴만 닫고 선택은 유지한다. 에디터 내부 탭은 plugin 의
+	// handleClick 이 같은 의미로 처리하므로 여기서는 건너뛴다.
+	function handleGlobalPointerDown(e: PointerEvent) {
+		if (!tapSelection.menuOpen) return;
+		const target = e.target as HTMLElement | null;
+		if (!target) return;
+		if (target.closest('.tap-select-menu')) return;
+		if (target.closest('.tomboy-editor')) return;
+		const editor = getEditor();
+		if (!editor || editor.isDestroyed) return;
+		closeTapSelectMenu(editor.view);
+	}
+
 	async function handleExtractNote() {
 		const editor = getEditor();
 		if (!editor) return;
@@ -560,7 +574,9 @@
 	{/if}
 </div>
 
-{#if tapSelection.text && tapSelection.rect}
+<svelte:window onpointerdown={handleGlobalPointerDown} />
+
+{#if tapSelection.menuOpen && tapSelection.text && tapSelection.rect}
 	<TapSelectMenu
 		rect={tapSelection.rect}
 		oncopy={handleCopyTapSelection}
