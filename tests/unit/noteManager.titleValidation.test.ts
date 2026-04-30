@@ -63,7 +63,7 @@ beforeEach(() => {
 });
 
 describe('updateNoteFromEditor — title validation gate', () => {
-	it('refuses to save when the new title is shorter than 5 chars (after trim)', async () => {
+	it('refuses to save when the new title is shorter than 4 chars (after trim)', async () => {
 		const target = makeNote({ guid: 'target', title: 'Original Title' });
 		store.set(target.guid, { ...target });
 

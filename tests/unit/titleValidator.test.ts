@@ -38,13 +38,13 @@ beforeEach(() => {
 });
 
 describe('validateTitleLength', () => {
-	it('rejects titles shorter than 5 chars', () => {
+	it('rejects titles shorter than 4 chars', () => {
 		const err = validateTitleLength('abc');
 		expect(err).toEqual({ kind: 'tooShort', minLength: MIN_TITLE_LENGTH, actual: 3 });
 	});
 
-	it('accepts exactly 5 chars (boundary)', () => {
-		expect(validateTitleLength('abcde')).toBeNull();
+	it('accepts exactly 4 chars (boundary)', () => {
+		expect(validateTitleLength('abcd')).toBeNull();
 	});
 
 	it('trims before counting, so "   ab   " is too short', () => {
