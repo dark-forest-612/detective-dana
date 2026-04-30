@@ -2,7 +2,7 @@
  * Note-title validation rules.
  *
  * Rules (Task 3):
- *   - After trimming, a title must be at least 5 characters long.
+ *   - After trimming, a title must be at least 4 characters long.
  *   - Titles must be unique across the note collection, case-sensitively
  *     (matching the Task 1 rule: "Apple" and "apple" are distinct notes).
  *
@@ -16,7 +16,7 @@
 import type { NoteRepository } from '$lib/repository/NoteRepository.js';
 
 /** Minimum trimmed length a note title must have to be considered valid. */
-export const MIN_TITLE_LENGTH = 5;
+export const MIN_TITLE_LENGTH = 4;
 
 export type TitleValidationError =
 	| { kind: 'tooShort'; minLength: number; actual: number }

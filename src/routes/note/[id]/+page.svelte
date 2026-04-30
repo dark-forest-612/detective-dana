@@ -8,8 +8,7 @@
 		deleteNoteById,
 		getNoteEditorContent,
 		createNote,
-		findNoteByTitle,
-		listNotes
+		findNoteByTitle
 	} from '$lib/core/noteManager.js';
 	import { toggleFavorite, isFavorite } from '$lib/core/favorites.js';
 	import type { NoteData } from '$lib/core/note.js';
@@ -115,7 +114,6 @@
 	}
 
 	const noteId = $derived(page.params.id);
-	const isFromHome = $derived(page.url.searchParams.get('from') === 'home');
 	const currentNotebook = $derived(note ? getNotebook(note) : null);
 	const isFavoriteNote = $derived.by(() => {
 		const n = note;
@@ -452,34 +450,6 @@
 		}
 	}
 
-	async function gotoRandom() {
-		const all = (await listNotes()).filter((n) => n.guid !== noteId);
-		if (all.length === 0) return;
-		const picked = all[Math.floor(Math.random() * all.length)];
-		goto(`/note/${picked.guid}?from=home`);
-	}
-
-	function todayTitle(): string {
-		const d = new Date();
-		const y = d.getFullYear();
-		const m = String(d.getMonth() + 1).padStart(2, '0');
-		const day = String(d.getDate()).padStart(2, '0');
-		return `${y}-${m}-${day}`;
-	}
-
-	async function gotoToday() {
-		const title = todayTitle();
-		const existing = await findNoteByTitle(title);
-		if (existing) {
-			if (existing.guid === noteId) return;
-			goto(`/note/${existing.guid}?from=home`);
-			return;
-		}
-		const created = await createNote(title);
-		markAutoEdit(created.guid);
-		goto(`/note/${created.guid}?from=home`);
-	}
-
 	async function handleNotebookSelect(name: string | null) {
 		if (!note) return;
 		await flushSave();
@@ -589,10 +559,6 @@
 		/>
 	</div>
 
-	{#if isFromHome}
-		<button class="fab-today" onclick={gotoToday} aria-label="오늘 날짜 노트">📅</button>
-		<button class="fab-random" onclick={gotoRandom} aria-label="랜덤 노트">🎲</button>
-	{/if}
 </div>
 
 {#if tapSelection.text && tapSelection.rect}
@@ -783,47 +749,4 @@
 		color: var(--color-text-secondary);
 	}
 
-	.fab-random {
-		position: absolute;
-		bottom: 88px;
-		right: 20px;
-		width: 48px;
-		height: 48px;
-		border-radius: 50%;
-		border: none;
-		background: var(--color-bg);
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-		font-size: 1.4rem;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		cursor: pointer;
-		z-index: 10;
-	}
-
-	.fab-random:active {
-		transform: scale(0.93);
-	}
-
-	.fab-today {
-		position: absolute;
-		bottom: calc(88px + 56px);
-		right: 20px;
-		width: 48px;
-		height: 48px;
-		border-radius: 50%;
-		border: none;
-		background: var(--color-bg);
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-		font-size: 1.4rem;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		cursor: pointer;
-		z-index: 10;
-	}
-
-	.fab-today:active {
-		transform: scale(0.93);
-	}
 </style>
