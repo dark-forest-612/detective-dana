@@ -461,7 +461,7 @@
 	}
 </script>
 
-<div class="editor-page">
+<div class="editor-page" class:read-mode={!canEdit}>
 	{#if lockState.kind === 'held-by-other'}
 		<div class="lock-banner" role="status">
 			<span class="lock-icon">🔒</span>
@@ -559,6 +559,16 @@
 		/>
 	</div>
 
+	{#if note && (lockState.kind === 'held-by-me' || lockState.kind === 'available')}
+		<button
+			class="fab-edit"
+			class:editing={lockState.kind === 'held-by-me'}
+			onclick={toggleLock}
+			aria-label={lockState.kind === 'held-by-me' ? '편집 종료' : '편집 시작'}
+		>
+			{#if lockState.kind === 'held-by-me'}✓ 편집 완료{:else}✎ 편집{/if}
+		</button>
+	{/if}
 </div>
 
 {#if tapSelection.text && tapSelection.rect}
@@ -596,6 +606,12 @@
 		flex-direction: column;
 		height: 100%;
 		position: relative;
+	}
+
+	/* Read-only 모드는 연한 녹색 배경으로 편집 모드와 시각적으로 구분.
+	   .editor-area 가 부모 배경을 덮지 않도록 그대로 두면 자연스럽게 비친다. */
+	.editor-page.read-mode {
+		background: #e8f5e9;
 	}
 
 	.lock-banner {
@@ -749,4 +765,36 @@
 		color: var(--color-text-secondary);
 	}
 
+	.fab-edit {
+		position: absolute;
+		bottom: 88px;
+		right: 20px;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 12px 20px;
+		border: none;
+		border-radius: 999px;
+		background: var(--color-primary, #1a73e8);
+		color: white;
+		font-size: 0.95rem;
+		font-weight: 600;
+		box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+		cursor: pointer;
+		z-index: 10;
+	}
+
+	.fab-edit.editing {
+		background: #15803d;
+	}
+
+	.fab-edit:active {
+		transform: scale(0.95);
+	}
+
+	/* 키보드가 올라오면 편집 영역을 가리지 않도록 숨김.
+	   `keyboard-open` 클래스는 viewportHeight.ts 에서 토글된다. */
+	:global(html.keyboard-open) .fab-edit {
+		display: none;
+	}
 </style>
