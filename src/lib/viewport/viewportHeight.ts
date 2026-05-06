@@ -38,7 +38,9 @@ export function bindViewportHeight(): () => void {
 		// Small diffs come from URL-bar / tap-highlight transitions; the
 		// virtual keyboard is always well above ~120px. Filter the noise so
 		// the shell doesn't twitch while the browser chrome settles.
-		root.style.setProperty('--keyboard-inset', inset > 80 ? `${inset}px` : '0px');
+		const open = inset > 80;
+		root.style.setProperty('--keyboard-inset', open ? `${inset}px` : '0px');
+		root.classList.toggle('keyboard-open', open);
 	};
 
 	update();
@@ -50,5 +52,6 @@ export function bindViewportHeight(): () => void {
 	return () => {
 		vv.removeEventListener('resize', update);
 		root.style.removeProperty('--keyboard-inset');
+		root.classList.remove('keyboard-open');
 	};
 }

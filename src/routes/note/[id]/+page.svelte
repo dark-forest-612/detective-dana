@@ -24,7 +24,7 @@
 	import { NoteLockController } from '$lib/collab/noteLockController.svelte.js';
 	import { markAutoEdit, consumeAutoEdit } from '$lib/collab/autoEdit.js';
 	import { tapSelection } from '$lib/editor/tapSelect/tapSelection.svelte.js';
-	import { getTapSelectRanges } from '$lib/editor/tapSelect/tapSelectPlugin.js';
+	import { getTapSelectRanges, closeTapSelectMenu } from '$lib/editor/tapSelect/tapSelectPlugin.js';
 	import TapSelectMenu from '$lib/editor/tapSelect/TapSelectMenu.svelte';
 
 	// `$state.raw` for the large-content holders. Svelte's default deep
@@ -371,6 +371,20 @@
 		editor.commands.focus('end');
 	}
 
+	// 메뉴가 떠 있을 때 에디터/메뉴 바깥(툴바·FAB·메타바·페이지 여백 등)을
+	// 터치하면 메뉴만 닫고 선택은 유지한다. 에디터 내부 탭은 plugin 의
+	// handleClick 이 같은 의미로 처리하므로 여기서는 건너뛴다.
+	function handleGlobalPointerDown(e: PointerEvent) {
+		if (!tapSelection.menuOpen) return;
+		const target = e.target as HTMLElement | null;
+		if (!target) return;
+		if (target.closest('.tap-select-menu')) return;
+		if (target.closest('.tomboy-editor')) return;
+		const editor = getEditor();
+		if (!editor || editor.isDestroyed) return;
+		closeTapSelectMenu(editor.view);
+	}
+
 	async function handleExtractNote() {
 		const editor = getEditor();
 		if (!editor) return;
@@ -461,7 +475,7 @@
 	}
 </script>
 
-<div class="editor-page">
+<div class="editor-page" class:read-mode={!canEdit}>
 	{#if lockState.kind === 'held-by-other'}
 		<div class="lock-banner" role="status">
 			<span class="lock-icon">🔒</span>
@@ -476,26 +490,15 @@
 	<div class="editor-meta-bar" class:scrolled>
 		<span class="save-indicator" class:visible={saving}>저장 중...</span>
 		{#if note}
-			<button
-				class="lock-toggle"
-				class:active={lockState.kind === 'held-by-me'}
-				class:readonly={lockState.kind === 'held-by-other'}
-				onclick={toggleLock}
-				disabled={lockState.kind === 'held-by-other' || lockState.kind === 'loading'}
-				title={
-					lockState.kind === 'held-by-me' ? '편집 종료' :
-					lockState.kind === 'held-by-other' ? `${lockState.holderName ?? '다른 사용자'}님이 편집 중` :
-					lockState.kind === 'available' ? '편집 시작' :
-					lockState.kind === 'loading' ? '로딩 중' : '오류'
-				}
-			>
-				{#if lockState.kind === 'held-by-me'}✏️ 편집 중
-				{:else if lockState.kind === 'held-by-other'}👀 읽기 전용
-				{:else if lockState.kind === 'available'}✎ 편집
-				{:else if lockState.kind === 'loading'}…
-				{:else}!
-				{/if}
-			</button>
+			{#if lockState.kind === 'held-by-me'}
+				<button
+					class="lock-toggle active"
+					onclick={toggleLock}
+					title="편집 종료"
+				>
+					✏️ 편집 중
+				</button>
+			{/if}
 			<button
 				class="notebook-chip"
 				onclick={() => (pickerOpen = true)}
@@ -559,9 +562,21 @@
 		/>
 	</div>
 
+	{#if note && (lockState.kind === 'held-by-me' || lockState.kind === 'available')}
+		<button
+			class="fab-edit"
+			class:editing={lockState.kind === 'held-by-me'}
+			onclick={toggleLock}
+			aria-label={lockState.kind === 'held-by-me' ? '편집 종료' : '편집 시작'}
+		>
+			{#if lockState.kind === 'held-by-me'}✓ 편집 완료{:else}✎ 편집{/if}
+		</button>
+	{/if}
 </div>
 
-{#if tapSelection.text && tapSelection.rect}
+<svelte:window onpointerdown={handleGlobalPointerDown} />
+
+{#if tapSelection.menuOpen && tapSelection.text && tapSelection.rect}
 	<TapSelectMenu
 		rect={tapSelection.rect}
 		oncopy={handleCopyTapSelection}
@@ -596,6 +611,12 @@
 		flex-direction: column;
 		height: 100%;
 		position: relative;
+	}
+
+	/* Read-only 모드는 연한 녹색 배경으로 편집 모드와 시각적으로 구분.
+	   .editor-area 가 부모 배경을 덮지 않도록 그대로 두면 자연스럽게 비친다. */
+	.editor-page.read-mode {
+		background: #e8f5e9;
 	}
 
 	.lock-banner {
@@ -666,15 +687,6 @@
 	.lock-toggle.active {
 		background: rgba(199, 237, 199, 0.95);
 		color: #14532d;
-	}
-
-	.lock-toggle.readonly {
-		background: rgba(238, 224, 196, 0.92);
-		color: #7a4a00;
-	}
-
-	.lock-toggle:disabled {
-		cursor: default;
 	}
 
 	.save-indicator {
@@ -749,4 +761,36 @@
 		color: var(--color-text-secondary);
 	}
 
+	.fab-edit {
+		position: absolute;
+		bottom: 88px;
+		right: 20px;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 12px 20px;
+		border: none;
+		border-radius: 999px;
+		background: var(--color-primary, #1a73e8);
+		color: white;
+		font-size: 0.95rem;
+		font-weight: 600;
+		box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+		cursor: pointer;
+		z-index: 10;
+	}
+
+	.fab-edit.editing {
+		background: #15803d;
+	}
+
+	.fab-edit:active {
+		transform: scale(0.95);
+	}
+
+	/* 키보드가 올라오면 편집 영역을 가리지 않도록 숨김.
+	   `keyboard-open` 클래스는 viewportHeight.ts 에서 토글된다. */
+	:global(html.keyboard-open) .fab-edit {
+		display: none;
+	}
 </style>
